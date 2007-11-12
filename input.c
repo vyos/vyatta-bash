@@ -454,7 +454,7 @@ b_fill_buffer (bp)
       if (nr == 0)
 	bp->b_flag |= B_EOF;
       else
-	bp->b_flag |= B_ERROR;
+	fatal_error("error reading input file: %s", strerror(errno));
       return (EOF);
     }
 

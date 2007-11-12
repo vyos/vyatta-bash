@@ -2187,7 +2187,7 @@ do_compound_assignment (name, value, flags)
   if (mklocal && variable_context)
     {
       v = find_variable (name);
-      if (v == 0 || array_p (v) == 0)
+      if (v == 0 || array_p (v) == 0 || v->context != variable_context)
         v = make_local_array_variable (name);
       v = assign_array_var_from_string (v, value, flags);
     }
@@ -2573,6 +2573,13 @@ expand_assignment_string_to_string (string, quoted)
      int quoted;
 {
   return (expand_string_to_string_internal (string, quoted, expand_string_assignment));
+}
+
+char *
+expand_arith_string (string, quoted)
+     char *string;
+{
+  return (expand_string_if_necessary (string, quoted, expand_string));
 }
 
 #if defined (COND_COMMAND)
@@ -5248,7 +5255,7 @@ verify_substring_values (value, substr, vtype, e1p, e2p)
   else
     t = (char *)0;
 
-  temp1 = expand_string_if_necessary (substr, Q_DOUBLE_QUOTES, expand_string);
+  temp1 = expand_arith_string (substr, Q_DOUBLE_QUOTES);
   *e1p = evalexp (temp1, &expok);
   free (temp1);
   if (expok == 0)
@@ -5293,7 +5300,7 @@ verify_substring_values (value, substr, vtype, e1p, e2p)
     {
       t++;
       temp2 = savestring (t);
-      temp1 = expand_string_if_necessary (temp2, Q_DOUBLE_QUOTES, expand_string);
+      temp1 = expand_arith_string (temp2, Q_DOUBLE_QUOTES);
       free (temp2);
       t[-1] = ':';
       *e2p = evalexp (temp1, &expok);
@@ -5814,7 +5821,7 @@ parameter_brace_expand (string, indexp, quoted, quoted_dollar_atp, contains_doll
     {
       t_index++;
       free (name);
-      temp1 = string_extract (string, &t_index, "#%:-=?+/}", 0);
+      temp1 = string_extract (string, &t_index, "#%:-=?+/}", EX_VARNAME);
       name = (char *)xmalloc (3 + (strlen (temp1)));
       *name = string[sindex];
       if (string[sindex] == '!')
@@ -6435,7 +6442,7 @@ param_expand (string, sindex, quoted, expanded_something,
 	  temp2[t_index] = '\0';
 
 	  /* Expand variables found inside the expression. */
-	  temp1 = expand_string_if_necessary (temp2, Q_DOUBLE_QUOTES, expand_string);
+	  temp1 = expand_arith_string (temp2, Q_DOUBLE_QUOTES);
 	  free (temp2);
 
 arithsub:
@@ -6477,7 +6484,7 @@ comsub:
       zindex = t_index;
 
        /* Do initial variable expansion. */
-      temp1 = expand_string_if_necessary (temp, Q_DOUBLE_QUOTES, expand_string);
+      temp1 = expand_arith_string (temp, Q_DOUBLE_QUOTES);
 
       goto arithsub;
 
@@ -6795,6 +6802,12 @@ add_string:
 	  if (temp && *temp && t_index > 0)
 	    {
 	      temp1 = bash_tilde_expand (temp, tflag);
+	      if  (temp1 && *temp1 == '~' && STREQ (temp, temp1))
+		{
+		  FREE (temp);
+		  FREE (temp1);
+		  goto add_character;		/* tilde expansion failed */
+		}
 	      free (temp);
 	      temp = temp1;
 	      sindex += t_index;

@@ -472,6 +472,7 @@ add_char:
   if (retval < 0)
     {
       builtin_error (_("read error: %d: %s"), fd, strerror (errno));
+      run_unwind_frame ("read_builtin");
       return (EXECUTION_FAILURE);
     }
 #endif

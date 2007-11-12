@@ -2716,6 +2716,7 @@ read_token (command)
 #define P_ALLOWESC	0x02
 #define P_DQUOTE	0x04
 #define P_COMMAND	0x08	/* parsing a command, so look for comments */
+#define P_BACKQUOTE	0x10	/* parsing a backquoted command substitution */
 
 static char matched_pair_error;
 static char *
@@ -2725,12 +2726,12 @@ parse_matched_pair (qc, open, close, lenp, flags)
      int *lenp, flags;
 {
   int count, ch, was_dollar, in_comment, check_comment;
-  int pass_next_character, nestlen, ttranslen, start_lineno;
+  int pass_next_character, backq_backslash, nestlen, ttranslen, start_lineno;
   char *ret, *nestret, *ttrans;
   int retind, retsize, rflags;
 
   count = 1;
-  pass_next_character = was_dollar = in_comment = 0;
+  pass_next_character = backq_backslash = was_dollar = in_comment = 0;
   check_comment = (flags & P_COMMAND) && qc != '\'' && qc != '"' && (flags & P_DQUOTE) == 0;
 
   /* RFLAGS is the set of flags we want to pass to recursive calls. */
@@ -2742,11 +2743,8 @@ parse_matched_pair (qc, open, close, lenp, flags)
   start_lineno = line_number;
   while (count)
     {
-#if 0
-      ch = shell_getc ((qc != '\'' || (flags & P_ALLOWESC)) && pass_next_character == 0);
-#else
-      ch = shell_getc (qc != '\'' && pass_next_character == 0);
-#endif
+      ch = shell_getc (qc != '\'' && pass_next_character == 0 && backq_backslash == 0);
+
       if (ch == EOF)
 	{
 	  free (ret);
@@ -2771,8 +2769,15 @@ parse_matched_pair (qc, open, close, lenp, flags)
 	  continue;
 	}
       /* Not exactly right yet */
-      else if (check_comment && in_comment == 0 && ch == '#' && (retind == 0 || ret[retind-1] == '\n' || whitespace (ret[retind -1])))
+      else if MBTEST(check_comment && in_comment == 0 && ch == '#' && (retind == 0 || ret[retind-1] == '\n' || whitespace (ret[retind - 1])))
 	in_comment = 1;
+
+      /* last char was backslash inside backquoted command substitution */
+      if (backq_backslash)
+	{
+	  backq_backslash = 0;
+	  /* Placeholder for adding special characters */
+	}
 
       if (pass_next_character)		/* last char was backslash */
 	{
@@ -2814,6 +2819,8 @@ parse_matched_pair (qc, open, close, lenp, flags)
 	{
 	  if MBTEST((flags & P_ALLOWESC) && ch == '\\')
 	    pass_next_character++;
+	  else if MBTEST((flags & P_BACKQUOTE) && ch == '\\')
+	    backq_backslash++;
 	  continue;
 	}
 
@@ -2898,7 +2905,11 @@ add_nestret:
 	}
       else if MBTEST(qc == '`' && (ch == '"' || ch == '\'') && in_comment == 0)
 	{
-	  nestret = parse_matched_pair (0, ch, ch, &nestlen, rflags);
+	  /* Add P_BACKQUOTE so backslash quotes the next character and
+	     shell_getc does the right thing with \<newline>.  We do this for
+	     a measure  of backwards compatibility -- it's not strictly the
+	     right POSIX thing. */
+	  nestret = parse_matched_pair (0, ch, ch, &nestlen, rflags|P_BACKQUOTE);
 	  goto add_nestret;
 	}
       else if MBTEST(was_dollar && (ch == '(' || ch == '{' || ch == '['))	/* ) } ] */
@@ -2907,7 +2918,7 @@ add_nestret:
 	  if (open == ch)	/* undo previous increment */
 	    count--;
 	  if (ch == '(')		/* ) */
-	    nestret = parse_matched_pair (0, '(', ')', &nestlen, rflags);
+	    nestret = parse_matched_pair (0, '(', ')', &nestlen, rflags & ~P_DQUOTE);
 	  else if (ch == '{')		/* } */
 	    nestret = parse_matched_pair (0, '{', '}', &nestlen, P_FIRSTCLOSE|rflags);
 	  else if (ch == '[')		/* ] */
@@ -3578,7 +3589,7 @@ read_token_word (character)
 	      FREE (ttok);
 	      all_digit_token = 0;
 	      compound_assignment = 1;
-#if 0
+#if 1
 	      goto next_character;
 #else
 	      goto got_token;		/* ksh93 seems to do this */
@@ -3695,7 +3706,9 @@ got_token:
       struct builtin *b;
       b = builtin_address_internal (token, 0);
       if (b && (b->flags & ASSIGNMENT_BUILTIN))
-        parser_state |= PST_ASSIGNOK;
+	parser_state |= PST_ASSIGNOK;
+      else if (STREQ (token, "eval") || STREQ (token, "let"))
+	parser_state |= PST_ASSIGNOK;
     }
 
   yylval.word = the_word;
@@ -4686,17 +4699,20 @@ parse_compound_assignment (retlenp)
      int *retlenp;
 {
   WORD_LIST *wl, *rl;
-  int tok, orig_line_number, orig_token_size;
+  int tok, orig_line_number, orig_token_size, orig_last_token, assignok;
   char *saved_token, *ret;
 
   saved_token = token;
   orig_token_size = token_buffer_size;
   orig_line_number = line_number;
+  orig_last_token = last_read_token;
 
   last_read_token = WORD;	/* WORD to allow reserved words here */
 
   token = (char *)NULL;
   token_buffer_size = 0;
+
+  assignok = parser_state&PST_ASSIGNOK;		/* XXX */
 
   wl = (WORD_LIST *)NULL;	/* ( */
   parser_state |= PST_COMPASSIGN;
@@ -4740,7 +4756,7 @@ parse_compound_assignment (retlenp)
 	jump_to_top_level (DISCARD);
     }
 
-  last_read_token = WORD;
+  last_read_token = orig_last_token;		/* XXX - was WORD? */
   if (wl)
     {
       rl = REVERSE_LIST (wl, WORD_LIST *);
@@ -4752,6 +4768,10 @@ parse_compound_assignment (retlenp)
 
   if (retlenp)
     *retlenp = (ret && *ret) ? strlen (ret) : 0;
+
+  if (assignok)
+    parser_state |= PST_ASSIGNOK;
+
   return ret;
 }
 

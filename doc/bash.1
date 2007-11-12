@@ -6,12 +6,12 @@
 .\"	Case Western Reserve University
 .\"	chet@po.cwru.edu
 .\"
-.\"	Last Change: Sat Aug 27 13:28:44 EDT 2005
+.\"	Last Change: Wed Dec 28 19:58:45 EST 2005
 .\"
 .\" bash_builtins, strip all but Built-Ins section
 .if \n(zZ=1 .ig zZ
 .if \n(zY=1 .ig zY
-.TH BASH 1 "2005 Aug 27" "GNU Bash-3.1-beta1"
+.TH BASH 1 "2005 Dec 28" "GNU Bash-3.1"
 .\"
 .\" There's some problem with having a `@'
 .\" in a tagged paragraph with the BSD man macros.
@@ -184,7 +184,9 @@ Display a usage message on standard output and exit successfully.
 .PD
 Execute commands from
 .I file
-instead of the standard personal initialization file
+instead of the system wide initialization file
+.I /etc/bash.bashrc
+and the standard personal initialization file
 .I ~/.bashrc
 if the shell is interactive (see
 .SM
@@ -215,7 +217,9 @@ reads these files when it is invoked as a login shell (see
 below).
 .TP
 .B \-\-norc
-Do not read and execute the personal initialization file
+Do not read and execute the system wide initialization file
+.I /etc/bash.bashrc
+and the personal initialization file
 .I ~/.bashrc
 if the shell is interactive.
 This option is on by default if the shell is invoked as
@@ -323,13 +327,15 @@ exists.
 .PP
 When an interactive shell that is not a login shell is started,
 .B bash
-reads and executes commands from \fI~/.bashrc\fP, if that file exists.
+reads and executes commands from \fI/etc/bash.bashrc\fP and \fI~/.bashrc\fP,
+if these files exist.
 This may be inhibited by using the
 .B \-\-norc
 option.
 The \fB\-\-rcfile\fP \fIfile\fP option will force
 .B bash
-to read and execute commands from \fIfile\fP instead of \fI~/.bashrc\fP.
+to read and execute commands from \fIfile\fP instead of
+\fI/etc/bash.bashrc\fP and \fI~/.bashrc\fP.
 .PP
 When
 .B bash
@@ -414,7 +420,8 @@ daemon, usually \fIrshd\fP.
 If
 .B bash
 determines it is being run by \fIrshd\fP, it reads and executes
-commands from \fI~/.bashrc\fP, if that file exists and is readable.
+commands from \fI/etc/bash.bashrc\fP and \fI~/.bashrc\fP,
+if these files exist and are readable.
 It will not do this if invoked as \fBsh\fP.
 The
 .B \-\-norc
@@ -677,8 +684,8 @@ If the shell option
 .B nocasematch
 is enabled, the match is performed without regard to the case
 of alphabetic characters.
-The return value is 0 if the string matches or does not match
-the pattern, respectively, and 1 otherwise.
+The return value is 0 if the string matches (\fB==\fP) or does not match
+(\fB!=\fP) the pattern, and 1 otherwise.
 Any part of the pattern may be quoted to force it to be matched as a
 string.
 .if t .sp 0.5
@@ -807,6 +814,12 @@ it against each \fIpattern\fP in turn, using the same matching rules
 as for pathname expansion (see
 .B Pathname Expansion
 below).
+The \fIword\fP is expanded using tilde
+expansion, parameter and variable expansion, arithmetic substitution,
+command substitution, process substitution and quote removal.
+Each \fIpattern\fP examined is expanded using tilde
+expansion, parameter and variable expansion, arithmetic substitution,
+command substitution, and process substitution.
 If the shell option
 .B nocasematch
 is enabled, the match is performed without regard to the case
@@ -1638,7 +1651,9 @@ A filename whose suffix matches one of the entries in
 is excluded from the list of matched filenames.
 A sample value is
 .if t \f(CW".o:~"\fP.
-.if n ".o:~".
+.if n ".o:~"
+(Quoting is needed when assigning a value to this variable,
+which contains tildes).
 .TP
 .B GLOBIGNORE
 A colon-separated list of patterns defining the set of filenames to
@@ -2018,6 +2033,13 @@ job identifier (see
 below).  If set to any other value, the supplied string must
 be a prefix of a stopped job's name; this provides functionality
 analogous to the \fB%\fP\fIstring\fP job identifier.
+.TP
+.B command_not_found_handle
+The name of a shell function to be called if a command cannot be
+found. The return value of this function should be 0, if the command
+is available after execution of the function, otherwise 127 (EX_NOTFOUND).
+Enabled only in interactive, non POSIX mode shells. This is a Debian
+extension.
 .TP
 .B histchars
 The two or three characters which control history expansion
@@ -2410,6 +2432,9 @@ below).
 \fIlength\fP must evaluate to a number greater than or equal to zero.
 If \fIoffset\fP evaluates to a number less than zero, the value
 is used as an offset from the end of the value of \fIparameter\fP.
+Arithmetic expressions starting with a - must be separated by whitespace
+from the preceding : to be
+distinguished from the \fBUse Default Values\fP expansion.
 If \fIparameter\fP is \fB@\fP, the result is \fIlength\fP positional
 parameters beginning at \fIoffset\fP.
 If \fIparameter\fP is an array name indexed by @ or *,
@@ -2606,6 +2631,9 @@ and the substitution of the result.  The format for arithmetic expansion is:
 \fB$((\fP\fIexpression\fP\fB))\fP
 .RE
 .PP
+The old format \fB$[\fP\fIexpression\fP\fB]\fP is deprecated and will
+be removed in upcoming versions of bash.
+.PP
 The
 .I expression
 is treated as if it were within double quotes, but a double quote
@@ -2743,6 +2771,10 @@ If the shell option
 .B nocaseglob
 is enabled, the match is performed without regard to the case
 of alphabetic characters.
+Note that when using range expressions like
+[a-z] (see below), letters of the other case may be included,
+depending on the setting of
+.B LC_COLLATE.
 When a pattern is used for pathname expansion,
 the character
 .B ``.''
@@ -3008,6 +3040,9 @@ is an integer port number or service name, \fBbash\fP attempts to open
 a UDP connection to the corresponding socket.
 .PD
 .RE
+.PP
+\fBNOTE:\fP Bash, as packaged for Debian, does \fBnot\fP support using
+the \fB/dev/tcp\fP and \fB/dev/udp\fP files.
 .PP
 A failure to open or create a file causes the redirection to fail.
 .PP
@@ -3534,6 +3569,10 @@ descriptor 0, 1, or 2, respectively, is checked.
 .PP
 Unless otherwise specified, primaries that operate on files follow symbolic
 links and operate on the target of the link, rather than the link itself.
+.PP
+See the description of the \fItest\fP builtin command (section SHELL
+BUILTIN COMMANDS below) for the handling of parameters (i.e.
+missing parameters).
 .sp 1
 .PD 0
 .TP
@@ -8484,7 +8523,7 @@ option suppresses shell function lookup, as with the \fBcommand\fP builtin.
 returns true if any of the arguments are found, false if
 none are found.
 .TP
-\fBulimit\fP [\fB\-SHacdflmnpstuv\fP [\fIlimit\fP]]
+\fBulimit\fP [\fB\-SHacdefilmnpqrstuvx\fP [\fIlimit\fP]]
 Provides control over the resources available to the shell and to
 processes started by it, on systems that allow such control.
 The \fB\-H\fP and \fB\-S\fP options specify that the hard or soft limit is
@@ -8520,8 +8559,14 @@ The maximum size of core files created
 .B \-d
 The maximum size of a process's data segment
 .TP
+.B \-e
+The maximum scheduling priority (`nice')
+.TP
 .B \-f
 The maximum size of files created by the shell
+.TP
+.B \-i
+The maximum number of pending signals
 .TP
 .B \-l
 The maximum size that may be locked into memory
@@ -8536,6 +8581,12 @@ allow this value to be set)
 .B \-p
 The pipe size in 512-byte blocks (this may not be set)
 .TP
+.B \-q
+The maximum number of bytes in POSIX message queues
+.TP
+.B \-r
+The maximum rt priority
+.TP
 .B \-s
 The maximum stack size
 .TP
@@ -8547,6 +8598,9 @@ The maximum number of processes available to a single user
 .TP
 .B \-v
 The maximum amount of virtual memory available to the shell
+.TP
+.B \-x
+The maximum number of file locks
 .PD
 .PP
 If
@@ -8768,6 +8822,12 @@ The \fBbash\fP executable
 .TP
 .FN /etc/profile
 The systemwide initialization file, executed for login shells
+.TP
+.FN /etc/bash.bashrc
+The systemwide per-interactive-shell startup file
+.TP
+.FN /etc/bash.logout
+The systemwide login shell cleanup file, executed when a login shell exits
 .TP
 .FN ~/.bash_profile
 The personal initialization file, executed for login shells

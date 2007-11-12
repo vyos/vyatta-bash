@@ -460,7 +460,7 @@ main (argc, argv, env)
   if (dump_translatable_strings)
     read_but_dont_execute = 1;
 
-  if (running_setuid && privileged_mode == 0)
+  if (running_setuid && privileged_mode == 0 && act_like_sh == 0)
     disable_priv_mode ();
 
   /* Need to get the argument to a -c option processed in the
@@ -1533,9 +1533,10 @@ set_shell_name (argv0)
      any startup files; just try to be more like /bin/sh. */
   shell_name = argv0 ? base_pathname (argv0) : PROGRAM;
 
-  if (*shell_name == '-')
+  if (argv0 && *argv0 == '-')
     {
-      shell_name++;
+      if (*shell_name == '-')
+        shell_name++;
       login_shell++;
     }
 

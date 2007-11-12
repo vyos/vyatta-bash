@@ -336,7 +336,8 @@ file is taken from the value of the shell variable @env{INPUTRC}.  If
 @ifclear BashFeatures
 file is taken from the value of the environment variable @env{INPUTRC}.  If
 @end ifclear
-that variable is unset, the default is @file{~/.inputrc}.
+that variable is unset, Readline will read both @file{/etc/inputrc} and 
+@file{~/.inputrc}.
 
 When a program which uses the Readline library starts up, the
 init file is read, and the key bindings are set.

@@ -723,6 +723,9 @@ rl_function_of_keyseq (keyseq, map, type)
 /* The last key bindings file read. */
 static char *last_readline_init_file = (char *)NULL;
 
+/* Flag to read system init file */
+static int read_system_init_file = 0;
+
 /* The file we're currently reading key bindings from. */
 static const char *current_readline_init_file;
 static int current_readline_init_include_level;
@@ -790,7 +793,7 @@ rl_re_read_init_file (count, ignore)
    to the first non-null filename from this list:
      1. the filename used for the previous call
      2. the value of the shell variable `INPUTRC'
-     3. ~/.inputrc
+     3. /etc/inputrc and ~/.inputrc
    If the file existed and could be opened and read, 0 is returned,
    otherwise errno is returned. */
 int
@@ -801,14 +804,31 @@ rl_read_init_file (filename)
   if (filename == 0)
     {
       filename = last_readline_init_file;
-      if (filename == 0)
+      if (filename == 0) {
         filename = sh_get_env_value ("INPUTRC");
-      if (filename == 0)
+	read_system_init_file = 0;
+      }
+      if (filename == 0) {
 	filename = DEFAULT_INPUTRC;
+	read_system_init_file = 1;
+      }
     }
 
-  if (*filename == 0)
+  if (*filename == 0) {
     filename = DEFAULT_INPUTRC;
+    read_system_init_file = 1;
+  }
+
+  if (read_system_init_file)
+    if (filename == last_readline_init_file)
+      {
+	filename = savestring (filename);
+	_rl_read_init_file (SYSTEM_INPUTRC, 0);
+	free (last_readline_init_file);
+	last_readline_init_file = filename;
+      }
+    else
+      _rl_read_init_file (SYSTEM_INPUTRC, 0);
 
 #if defined (__MSDOS__)
   if (_rl_read_init_file (filename, 0) == 0)

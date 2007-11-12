@@ -360,6 +360,7 @@ glob_vector (pat, dir, flags)
   count = lose = skip = 0;
 
   firstmalloc = 0;
+  nalloca = 0;
 
   /* If PAT is empty, skip the loop, but return one (empty) filename. */
   if (pat == 0 || *pat == '\0')
@@ -546,6 +547,8 @@ glob_vector (pat, dir, flags)
 		firstmalloc = 0;
 	      tmplink = lastlink;
 	    }
+	  else
+	    tmplink = 0;
 	  free (lastlink->name);
 	  lastlink = lastlink->next;
 	  FREE (tmplink);

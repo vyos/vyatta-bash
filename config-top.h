@@ -52,14 +52,14 @@
 /* The default value of the PATH variable. */
 #ifndef DEFAULT_PATH_VALUE
 #define DEFAULT_PATH_VALUE \
-  "/usr/gnu/bin:/usr/local/bin:/bin:/usr/bin:."
+  "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 #endif
 
 /* The value for PATH when invoking `command -p'.  This is only used when
    the Posix.2 confstr () function, or CS_PATH define are not present. */
 #ifndef STANDARD_UTILS_PATH
 #define STANDARD_UTILS_PATH \
-  "/bin:/usr/bin:/sbin:/usr/sbin:/etc:/usr/etc"
+  "/bin:/usr/bin:/sbin:/usr/sbin"
 #endif
 
 /* Default primary and secondary prompt strings. */
@@ -73,15 +73,15 @@
 #define KSH_COMPATIBLE_SELECT
 
 /* System-wide .bashrc file for interactive shells. */
-/* #define SYS_BASHRC "/etc/bash.bashrc" */
+#define SYS_BASHRC "/etc/bash.bashrc"
 
 /* System-wide .bash_logout for login shells. */
-/* #define SYS_BASH_LOGOUT "/etc/bash.bash_logout" */
+#define SYS_BASH_LOGOUT "/etc/bash.bash_logout"
 
 /* Define this to make non-interactive shells begun with argv[0][0] == '-'
    run the startup files when not in posix mode. */
-/* #define NON_INTERACTIVE_LOGIN_SHELLS */
+#define NON_INTERACTIVE_LOGIN_SHELLS
 
 /* Define this if you want bash to try to check whether it's being run by
    sshd and source the .bashrc if so (like the rshd behavior). */
-/* #define SSH_SOURCE_BASHRC */
+#define SSH_SOURCE_BASHRC
