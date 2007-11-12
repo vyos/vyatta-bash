@@ -1,0 +1,31 @@
+#! /bin/sh -e
+
+if [ $# -eq 3 -a "$2" = '-d' ]; then
+    pdir="-d $3"
+elif [ $# -ne 1 ]; then
+    echo >&2 "`basename $0`: script expects -patch|-unpatch as argument"
+    exit 1
+fi
+case "$1" in
+    -patch) patch $pdir -f --no-backup-if-mismatch -p1 < $0;;
+    -unpatch) patch $pdir -f --no-backup-if-mismatch -R -p1 < $0;;
+    *)
+	echo >&2 "`basename $0`: script expects -patch|-unpatch as argument"
+	exit 1
+esac
+exit 0
+
+# DP: send bug reports to Debian bash maintainer too.
+
+diff -urb bash.orig/support/bashbug.sh bash/support/bashbug.sh
+--- bash.orig/support/bashbug.sh	2002-04-16 23:15:15.000000000 +0200
++++ bash/support/bashbug.sh	2003-09-27 23:35:04.000000000 +0200
+@@ -134,6 +134,7 @@
+ 		esac ;;
+ esac
+ 
++BUGBASH="${BUGBASH},bash@packages.debian.org"
+ BUGADDR="${1-$BUGBASH}"
+ 
+ if [ -z "$DEFEDITOR" ] && [ -z "$EDITOR" ]; then
+Only in bash/support: bashbug.sh.orig

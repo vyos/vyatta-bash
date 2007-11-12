@@ -1,0 +1,9 @@
+#! /bin/sh -e
+
+if [ -x /usr/sbin/remove-shell ]; then
+    /usr/sbin/remove-shell /bin/bash-minimal
+fi
+
+#DEBHELPER#
+
+exit 0

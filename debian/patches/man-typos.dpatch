@@ -1,0 +1,36 @@
+#! /bin/sh -e
+
+if [ $# -eq 3 -a "$2" = '-d' ]; then
+    pdir="-d $3"
+elif [ $# -ne 1 ]; then
+    echo >&2 "`basename $0`: script expects -patch|-unpatch as argument"
+    exit 1
+fi
+case "$1" in
+    -patch) patch $pdir -f --no-backup-if-mismatch -p1 < $0;;
+    -unpatch) patch $pdir -f --no-backup-if-mismatch -R -p1 < $0;;
+    *)
+	echo >&2 "`basename $0`: script expects -patch|-unpatch as argument"
+	exit 1
+esac
+exit 0
+
+# DP: Fix typos in man page.
+
+--- ./doc/bash.1	2006-03-22 19:23:19.000000000 -0500
++++ ./doc/bash.1	2006-04-01 03:58:35.000000000 -0500
+@@ -815,10 +815,10 @@
+ .B Pathname Expansion
+ below).
+ The \fIword\fP is expanded using tilde
+-expansion, parameter and variable expansion, arithmetic substituion,
++expansion, parameter and variable expansion, arithmetic substitution,
+ command substitution, process substitution and quote removal.
+ Each \fIpattern\fP examined is expanded using tilde
+-expansion, parameter and variable expansion, arithmetic substituion,
++expansion, parameter and variable expansion, arithmetic substitution,
+ command substitution, and process substitution.
+ If the shell option
+ .B nocasematch
+
+

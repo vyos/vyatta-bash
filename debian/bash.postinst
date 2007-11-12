@@ -1,0 +1,22 @@
+#! /bin/bash -e
+
+# the symlink is in the package now. So this should never happen ...
+if [ ! -e /bin/sh ]; then
+    ln -s bash /bin/sh
+fi
+
+update-alternatives --install \
+    /usr/share/man/man7/builtins.7.gz \
+    builtins.7.gz \
+    /usr/share/man/man7/bash-builtins.7.gz \
+    10 \
+  || true
+
+if [ -x /usr/sbin/add-shell ]; then
+    /usr/sbin/add-shell /bin/bash
+    /usr/sbin/add-shell /bin/rbash
+fi
+
+#DEBHELPER#
+
+exit 0

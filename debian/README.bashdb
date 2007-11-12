@@ -1,0 +1,7 @@
+bashdb for Debian
+-----------------
+
+The debugger enhanced bash binary is installed under the name
+/usr/bin/bash-bashdb.
+
+ -- Matthias Klose <doko@debian.org>, Sun, 10 Aug 2003 23:10:38 +0200

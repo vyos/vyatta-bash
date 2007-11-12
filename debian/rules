@@ -1,0 +1,631 @@
+#! /usr/bin/make -f
+# -*- makefile -*-
+
+#export DH_VERBOSE=1
+
+unexport LANG LC_ALL LC_CTYPE LC_COLLATE LC_TIME LC_NUMERIC LC_MESSAGES
+
+# architecture dependent variables
+DEB_BUILD_GNU_TYPE	:= $(shell dpkg-architecture -qDEB_BUILD_GNU_TYPE)
+DEB_HOST_ARCH		:= $(shell dpkg-architecture -qDEB_HOST_ARCH)
+DEB_HOST_ARCH_OS	:= $(shell dpkg-architecture -qDEB_HOST_ARCH_OS)
+DEB_HOST_GNU_CPU	:= $(shell dpkg-architecture -qDEB_HOST_GNU_CPU)
+DEB_HOST_GNU_SYSTEM	:= $(shell dpkg-architecture -qDEB_HOST_GNU_SYSTEM)
+DEB_HOST_GNU_TYPE	:= $(shell dpkg-architecture -qDEB_HOST_GNU_TYPE)
+
+VERSION		:= 3.1
+#PKGVERSION	:= $(shell dpkg-parsechangelog \
+#			| sed -n '/Version:/s/\(.* \)\(.*\)-2\(.*\)/\2\3/p')
+#PKGVERSION	:= 3.0
+#dpkg_ctrl_args := -v$(PKGVERSION) -VBinary-Version=$(PKGVERSION)
+
+
+with_gfdl	= no
+
+CC	= gcc
+CFLAGS	= -g -O2
+SHELL	= bash
+YACC	= bison -y
+
+IX	= install -o 0 -g 0
+ID	= install -o 0 -g 0 -m 644
+
+# built with installed libreadline?
+with_installed_rl = no
+
+debflags =
+
+PWD	:= $(shell pwd)
+p	= bash
+p_min	= bash-minimal
+p_stat	= bash-static
+p_bins	= bash-builtins
+p_doc	= bash-doc
+p_bdb	= bashdb
+
+d	= debian/$(p)
+d_min	= debian/$(p_min)
+d_stat	= debian/$(p_stat)
+d_bins	= debian/$(p_bins)
+d_doc	= debian/$(p_doc)
+d_bdb	= debian/$(p_bdb)
+
+conf_args = \
+	--with-curses \
+	--disable-net-redirections \
+	--enable-largefile \
+	--prefix=/usr \
+	--infodir=/usr/share/info \
+	--mandir=/usr/share/man
+ifeq ($(with_installed_rl),yes)
+    conf_args += --with-installed-readline
+endif
+
+static_conf_args := $(conf_args) \
+	--enable-static-link \
+	--without-bash-malloc \
+	--host=$(DEB_HOST_GNU_TYPE)
+
+conf_args += --host=$(DEB_HOST_GNU_TYPE)
+
+min_conf_args = \
+	--enable-minimal-config \
+	--enable-largefile \
+	--prefix=/usr \
+	--infodir=/usr/share/info \
+	--mandir=/usr/share/man
+min_conf_args += --host=$(DEB_HOST_GNU_TYPE)
+
+
+#build: bash-build minimal-build static-build preinst-build all-bashdb-build check
+build: before-build bash-build minimal-build static-build preinst-build check
+
+before-build:
+	: # see #327477, needed to have HAVE_DEV_STDIN defined
+	(test -d /dev/fd && test -r /dev/stdin < /dev/null) \
+	  || (test -d /proc/self/fd && test -r /dev/stdin < /dev/null)
+ifneq (,$(findstring $(DEB_HOST_ARCH_OS), linux freebsd))
+	$(CC) $(CFLAGS) -o clear_console debian/clear_console.c -lncurses
+endif
+
+# ---------------------------------------------------------------------------
+# build standard bash
+
+bash-build:
+	$(MAKE) -f debian/rules do-build-bash \
+	    bash_src=bash \
+	    bash_patches="$(debian_patches)" \
+	    build=bash \
+	    configure_args="$(conf_args)"
+bash-configure:
+	$(MAKE) -f debian/rules do-configure-bash \
+	    bash_src=bash \
+	    bash_patches="$(debian_patches)" \
+	    build=bash \
+	    configure_args="$(conf_args)"
+
+# ---------------------------------------------------------------------------
+# build minimal bash
+
+minimal-build:
+	$(MAKE) -f debian/rules do-build-min \
+	    bash_src=bash \
+	    bash_patches="$(debian_patches)" \
+	    build=min \
+	    configure_args="$(min_conf_args)"
+minimal-configure:
+	$(MAKE) -f debian/rules do-configure-min \
+	    bash_src=bash \
+	    bash_patches="$(debian_patches)" \
+	    build=min \
+	    configure_args="$(min_conf_args)"
+
+# ---------------------------------------------------------------------------
+# build static bash
+
+static-build:
+	$(MAKE) -f debian/rules do-build-static \
+	    bash_src=bash \
+	    bash_patches="$(debian_patches)" \
+	    build=static \
+	    configure_args="$(static_conf_args)"
+static-configure:
+	$(MAKE) -f debian/rules do-configure-static \
+	    bash_src=bash \
+	    bash_patches="$(debian_patches)" \
+	    build=static \
+	    configure_args="$(static_conf_args)"
+
+# ---------------------------------------------------------------------------
+# build standard bash
+
+all-bashdb-build: bashdb-build #bashdb-doc-build
+
+bashdb-build:
+	DEBUGGER_START_FILE=/usr/share/bashdb/dbg-main.inc \
+	$(MAKE) -f debian/rules do-build-bashdb \
+	    bash_src=bashdb \
+	    bash_patches="$(bashdb_patches)" \
+	    build=bashdb \
+	    configure_args="$(conf_args)"
+bashdb-configure:
+	DEBUGGER_START_FILE=/usr/share/bashdb/dbg-main.inc \
+	$(MAKE) -f debian/rules do-configure-bashdb \
+	    bash_src=bashdb \
+	    bash_patches="$(bashdb_patches)" \
+	    build=bashdb \
+	    configure_args="$(conf_args)"
+
+bashdb-doc-build: stamps/stamp-build-bashdb-doc
+stamps/stamp-build-bashdb-doc:
+	cp -p build-bashdb/doc/version.texi bashdb/doc/
+	cp -p build-bashdb/debugger/doc/version.texi bashdb/debugger/doc/
+#	$(MAKE) -C build-bashdb doc
+	$(MAKE) -C build-bashdb/debugger/doc
+	touch stamps/stamp-build-bashdb-doc
+
+# ---------------------------------------------------------------------------
+
+bash-doc-build: stamps/stamp-build-bash-doc
+stamps/stamp-build-bash-doc:
+ifeq ($(with_gfdl),yes)
+	rm -f bash/doc/bashref.info
+	$(MAKE) -C build-bash/doc bashref.info bashref.pdf
+endif
+	touch stamps/stamp-build-bash-doc
+
+# ---------------------------------------------------------------------------
+
+check: stamps/stamp-check
+stamps/stamp-check: bash-build
+	@echo BEGIN test
+ifeq ($(DEB_BUILD_GNU_TYPE),$(DEB_HOST_GNU_TYPE))
+	-sh debian/locale-gen
+	LOCPATH=$(PWD)/locales \
+		$(MAKE) -C build-bash test 2>&1 | tee build-bash/test-protocol
+else
+	@echo Suppress 'make' test, because this is cross build
+endif
+	@echo END test
+	touch stamps/stamp-check
+
+# ---------------------------------------------------------------------------
+
+clean:
+	dh_testdir
+	dh_testroot
+	rm -rf stamps build-* bash bashdb
+	rm -f debian/bash.preinst
+	rm -f debian/README.Debian
+	rm -rf locales
+	rm -f clear_console
+	dh_clean
+
+preinst-build: debian/bash.preinst
+debian/bash.preinst: debian/bash.preinst.c
+	$(CC) -O2 -s -o debian/bash.preinst debian/bash.preinst.c
+
+# ---------------------------------------------------------------------------
+
+
+install: bash-install #bashdb-install
+
+bash-install: bash-build stamps/stamp-install-bash
+stamps/stamp-install-bash: stamps/stamp-build-bash
+	dh_testdir
+	dh_testroot
+	dh_clean -k -p$(p) -p$(p_doc) -p$(p_bins)
+	dh_installdirs -p$(p) \
+		bin \
+		etc/skel \
+		etc/bash_completion.d \
+		usr/share/doc/$(p)
+	dh_installdirs -p$(p_doc) \
+		usr/share/doc/$(p)
+	dh_installdirs -p$(p_bins) \
+		usr/share/doc/$(p)/examples/loadables \
+		usr/{include/bash/{builtins,lib/{glob,tilde}}}
+
+ifeq ($(with_gfdl),yes)
+# XXXXX
+	cp -p build-bash/doc/*.info bash/doc/
+endif
+
+	: # install it
+	$(MAKE) -C build-bash install \
+		CC='$(CC)' \
+		CFLAGS='$(CFLAGS)' \
+		YACC="$(YACC)" \
+		DESTDIR=$(PWD)/$(d)
+	mv $(d)/usr/bin/bash $(d)/bin/.
+	chmod 755 $(d)/usr/bin/bashbug
+ifneq ($(with_gfdl),yes)
+	mkdir -p $(d)/usr/share/man/man1
+	cp -p bash/doc/bash.1 $(d)/usr/share/man/man1/bash.1
+endif
+
+	: # extra links
+	ln -sf bash $(d)/bin/rbash
+	ln -sf bash $(d)/bin/sh
+	ln -sf bash.1 $(d)/usr/share/man/man1/sh.1
+
+	: # skeleton files
+	$(ID) debian/etc.bash.bashrc $(d)/etc/bash.bashrc
+	$(ID) debian/skel.bashrc $(d)/etc/skel/.bashrc
+	$(ID) debian/skel.bash_profile $(d)/etc/skel/.bash_profile
+	$(ID) debian/skel.bash_logout $(d)/etc/skel/.bash_logout
+
+	: # clean_console
+ifneq (,$(findstring $(DEB_HOST_ARCH_OS), linux freebsd))
+	$(IX) clear_console $(d)/usr/bin/
+	$(ID) debian/clear_console.1 $(d)/usr/share/man/man1/
+endif
+
+	: # install bash-completion
+	$(ID) debian/bash_completion/bash_completion $(d)/etc/.
+	cp -a debian/bash_completion/contrib \
+		$(d)/usr/share/doc/$(p)/completion-contrib
+	chmod 755 $(d)/usr/share/doc/$(p)/completion-contrib
+	chmod 644 $(d)/usr/share/doc/$(p)/completion-contrib/*
+	$(ID) debian/bash_completion/Changelog \
+		$(d)/usr/share/doc/$(p)/changelog.bash_completion
+	$(ID) debian/README.bash_completion $(d)/usr/share/doc/$(p)/
+	cat debian/bash_completion/README \
+		>> $(d)/usr/share/doc/$(p)/README.bash_completion
+	$(ID) debian/bash_completion/BUGS \
+		$(d)/usr/share/doc/bash/BUGS.bash_completion
+
+ifeq ($(with_gfdl),yes)
+	: # files for the bash-doc package
+	mv $(d)/usr/share/info/bash.info $(d)/usr/share/info/bashref.info
+	ln -sf bashref.info $(d)/usr/share/info/bash.info
+	mv $(d)/usr/share/info $(d_doc)/usr/share/
+endif
+
+	dh_installexamples -p$(p_doc) bash/examples/*
+	mv $(d_doc)/usr/share/doc/$(p_doc)/examples \
+		$(d_doc)/usr/share/doc/$(p)/examples
+	rm -rf $(d_doc)/usr/share/doc/$(p)/examples/loadables
+	ln -sf ../$(p)/examples $(d_doc)/usr/share/doc/$(p_doc)/examples
+
+	cd $(d_doc)/usr/share/doc/$(p)/examples && chmod 644 \
+		*bashdb/PERMISSION complete/complete.gnu-longopt
+	cd $(d_doc)/usr/share/doc/$(p)/examples && chmod 755 \
+		misc/aliasconv.*sh misc/cshtobash
+
+	cd $(d_doc)/usr/share/doc/$(p)/examples && chmod 644 \
+		scripts/shprompt scripts/precedence \
+		scripts/bcsh.sh scripts/krand.bash
+
+	: # files for the bash-builtins package
+	$(ID) bash/include/*.h bash/*.h  $(d_bins)/usr/include/bash/
+	$(ID) build-bash/*.h $(d_bins)/usr/include/bash/
+	rm -f $(d_bins)/usr/include/bash/y.tab.h
+	$(ID) bash/builtins/*.h $(d_bins)/usr/include/bash/builtins/
+	$(ID) bash/lib/glob/*.h $(d_bins)/usr/include/bash/lib/glob/
+	$(ID) bash/lib/tilde/*.h $(d_bins)/usr/include/bash/lib/tilde/
+	$(ID) bash/examples/loadables/{README,*.c} \
+		$(d_bins)/usr/share/doc/$(p)/examples/loadables
+	$(ID) build-bash/examples/loadables/Makefile \
+		$(d_bins)/usr/share/doc/$(p)/examples/loadables
+	ln -sf bash $(d_bins)/usr/share/doc/$(p_bins)
+
+	cat debian/README stamps/stamp-patch-bash > debian/README.Debian
+
+	touch stamps/stamp-install-bash
+
+bashdb-install: stamps/stamp-install-bashdb
+stamps/stamp-install-bashdb: stamps/stamp-build-bashdb
+	dh_testdir
+	dh_testroot
+	dh_clean -k -p$(p_bdb)
+	dh_installdirs -p$(p_bdb) \
+		usr/share/doc/$(p_bdb) \
+		usr/share/emacs/site-lisp/$(p_bdb)
+
+	: # install it
+	$(MAKE) -C build-bashdb install \
+		CC='$(CC)' \
+		CFLAGS='$(CFLAGS)' \
+		YACC="$(YACC)" \
+		DESTDIR=$(PWD)/$(d_bdb)
+	rm -f $(d_bdb)/usr/bin/bashbug
+	rm -f $(d_bdb)/usr/share/man/man1/bashbug.1
+	rm -f $(d_bdb)/usr/share/info/*
+
+	mv $(d_bdb)/usr/share/man/man1/bash.1 \
+		$(d_bdb)/usr/share/man/man1/bash+dbg.1
+
+	$(MAKE) -C build-bashdb/debugger/doc install \
+		DESTDIR=$(PWD)/$(d_bdb)
+	cp -p build-bashdb/debugger/doc/bashdb.html \
+		$(d_bdb)/usr/share/doc/$(p_bdb)/.
+	cp -p build-bashdb/debugger/doc/bashdb.1 \
+		$(d_bdb)/usr/share/man/man1/.
+
+	: # some corrections
+	mv $(d_bdb)/usr/bin/bash $(d_bdb)/usr/bin/bash+dbg
+	sed -e 's,/usr/bin/bash,/usr/bin/bash+dbg,g' \
+	    -e 's,/lib/bashdb,/share/bashdb,g' \
+		$(d_bdb)/usr/bin/bashdb > $(d_bdb)/usr/bin/bashdb.new
+	mv -f $(d_bdb)/usr/bin/bashdb.new $(d_bdb)/usr/bin/bashdb
+	chmod 755 $(d_bdb)/usr/bin/bashdb
+	cp -p bashdb/debugger/emacs/*.el \
+		$(d_bdb)/usr/share/emacs/site-lisp/$(p_bdb)/
+
+	touch stamps/stamp-install-bashdb
+
+binary-doc: bash-install bash-doc-build
+	dh_testdir
+	dh_testroot
+	mkdir -p $(d_doc)/usr/share/doc/$(p)
+	dh_installdocs -p$(p_doc) 
+ifeq ($(with_gfdl),yes)
+	cp -p build-bash/doc/bashref.pdf $(d_doc)/usr/share/doc/$(p)/.
+	dh_link -p$(p_doc) \
+	    /usr/share/doc/$(p)/bashref.pdf /usr/share/doc/$(p_doc)/bashref.pdf
+endif
+	dh_installchangelogs -p$(p_doc)
+	dh_compress -p$(p_doc) -Xexamples -X.pdf
+	dh_fixperms -p$(p_doc)
+	dh_installdeb -p$(p_doc)
+	dh_gencontrol -p$(p_doc)
+	dh_md5sums -p$(p_doc)
+	dh_builddeb -p$(p_doc)
+
+binary-bash: bash-install debian/bash.preinst
+	dh_testdir
+	dh_testroot
+	dh_installchangelogs -p$(p) bash/CWRU/changelog
+	dh_installdocs -p$(p) \
+		bash/{CHANGES,NEWS,COMPAT,doc/INTRO,POSIX} \
+		debian/{README.Debian,README.abs-guide,README.commands} \
+		debian/inputrc.arrows
+ifeq ($(with_gfdl),yes)
+	cp -p bash/doc/FAQ $(d)/usr/share/doc/$(p)/.
+endif
+	cp -p debian/FAQ $(d)/usr/share/doc/$(p)/.
+	dh_installman -p$(p) bash/doc/rbash.1 debian/bash-builtins.7
+	dh_installmenu -p$(p)
+	dh_strip -p$(p)
+	dh_compress -p$(p)
+	dh_fixperms -p$(p)
+	dh_shlibdeps -p$(p) -- -dPre-Depends $(d)/bin/bash debian/bash.preinst
+	dh_installdeb -p$(p)
+	dh_gencontrol -p$(p)
+	dh_md5sums -p$(p)
+	dh_builddeb -p$(p)
+
+# Even though it contains only headers and example files,
+# bash-builtins is NOT arch-independent because the config.h* files
+# differ on different archs.
+binary-builtins: bash-install
+	dh_testdir
+	dh_testroot
+	dh_compress -p$(p_bins) -Xexamples
+	dh_fixperms -p$(p_bins)
+	dh_installdeb -p$(p_bins)
+	dh_gencontrol -p$(p_bins)
+	dh_md5sums -p$(p_bins)
+	dh_builddeb -p$(p_bins)
+
+binary-static: static-build
+	dh_testdir
+	dh_testroot
+	dh_clean -k -p$(p_stat)
+	dh_installdirs -p$(p_stat) \
+		bin \
+		usr/share/man/man1
+	cp -p build-static/bash $(d_stat)/bin/bash-static
+	cp -p bash/doc/bash.1 $(d_stat)/usr/share/man/man1/bash-static.1
+	dh_installdocs -p$(p_stat)
+	dh_installchangelogs -p$(p_stat)
+	dh_strip -p$(p_stat)
+	dh_compress -p$(p_stat)
+	dh_fixperms -p$(p_stat)
+	dh_installdeb -p$(p_stat)
+	dh_gencontrol -p$(p_stat)
+	dh_md5sums -p$(p_stat)
+	dh_builddeb -p$(p_stat)
+
+binary-minimal: minimal-build
+	dh_testdir
+	dh_testroot
+	dh_clean -k -p$(p_min)
+	dh_installdirs -p$(p_min) \
+		bin \
+		usr/share/man/man1
+	cp -p build-min/bash $(d_min)/bin/bash-minimal
+	cp -p debian/bash-minimal.1 $(d_min)/usr/share/man/man1/.
+	dh_installdocs -p$(p_min)
+	dh_installchangelogs -p$(p_min)
+	dh_strip -p$(p_min)
+	dh_compress -p$(p_min)
+	dh_fixperms -p$(p_min)
+	dh_shlibdeps -p$(p_min)
+	dh_installdeb -p$(p_min)
+	dh_gencontrol -p$(p_min)
+	dh_md5sums -p$(p_min)
+	dh_builddeb -p$(p_min)
+
+binary-bashdb: bashdb-install
+	dh_testdir
+	dh_testroot
+	dh_installdocs -p$(p_bdb) \
+		bashdb/{CHANGES,NEWS,README}
+	cp -p debian/README.bashdb $(d_bdb)/usr/share/doc/$(p_bdb)/README.Debian
+	for i in AUTHORS CHANGES NEWS README THANKS TODO; do \
+	  cp -p bashdb/debugger/$$i \
+	    $(d_bdb)/usr/share/doc/$(p_bdb)/$$i.bashdb; \
+	done
+	dh_installdocs -p$(p_bdb)
+	dh_installchangelogs -p$(p_bdb) bashdb/debugger/ChangeLog
+	dh_installemacsen -p$(p_bdb)
+	dh_strip -p$(p_bdb)
+	dh_compress -p$(p_bdb)
+	dh_fixperms -p$(p_bdb)
+	dh_installdeb -p$(p_bdb)
+	dh_gencontrol -p$(p_bdb)
+	dh_md5sums -p$(p_bdb)
+	dh_builddeb -p$(p_bdb)
+
+binary-indep: binary-doc
+binary-arch: binary-bash binary-builtins binary-static binary-minimal #binary-bashdb
+binary:	binary-indep binary-arch
+
+# ---------------------------------------------------------------------------
+# common rules for all bash build variations
+
+do-build-$(build): stamps/stamp-build-$(build)
+stamps/stamp-build-$(build): stamps/stamp-configure-$(build)
+	dh_testdir
+	$(MAKE) -C build-$(build) \
+		CC='$(CC)' \
+		CFLAGS='$(CFLAGS)' \
+		YACC="$(YACC)" \
+		deb_builddir=build-$(build)/ \
+		$(debflags)
+ifeq ($(with_gfdl),yes)
+# XXX not done by toplevel make?
+	$(MAKE) -C build-$(build)/doc \
+		bash.info
+endif
+	touch stamps/stamp-build-$(build)
+
+do-configure-$(build): stamps/stamp-configure-$(build)
+stamps/stamp-configure-$(build): stamps/stamp-patch-$(bash_src)
+	dh_testdir
+	rm -rf build-$(build)
+	mkdir build-$(build)
+	cd build-$(build) && \
+	    CC="$(CC)" CFLAGS="$(CFLAGS)" YACC="$(YACC)" \
+		../$(bash_src)/configure $(configure_args)
+	if ! grep -q '#define HAVE_DEV_STDIN 1' build-$(build)/config.h; then \
+	  echo "HAVE_DEV_STDIN not defined, abortig build"; \
+	  exit 1; \
+	fi
+	touch stamps/stamp-configure-$(build)
+
+patchdir	= debian/patches
+debian_patches = \
+	bash31-001 \
+	bash31-002 \
+	bash31-003 \
+	bash31-004 \
+	bash31-005 \
+	bash31-006 \
+	bash31-007 \
+	bash31-008 \
+	bash31-009 \
+	bash31-010 \
+	bash31-011 \
+	bash31-012 \
+	bash31-013 \
+	bash31-014 \
+	bash31-015 \
+	bash31-016 \
+	bash31-017 \
+	readline51-001 \
+	rl-inputrc \
+	bashbug-editor \
+	deb-bash-config \
+	deb-examples \
+	man-arithmetic \
+	man-fignore \
+	man-bashrc \
+	man-bashlogout \
+	man-substring-exp \
+	man-nocaseglob \
+	man-test \
+	man-test2 \
+	man-net-redirections \
+	privmode \
+	rbash-manpage \
+	command-not-found \
+	bash-default-editor \
+	ulimit \
+	po-sv \
+	bash-subst-param-length \
+	pgrp-pipe \
+	input-err \
+	read-memleak \
+	login-shell \
+	man-typos \
+
+ifeq ($(with_gfdl),yes)
+  debian_patches += \
+	bash31-002-doc \
+	command-not-found-doc \
+	man-substring-exp-doc \
+	man-test2-doc \
+	ulimit-doc \
+	man-net-redirections-doc \
+
+endif
+
+# all debian_patches, without bash205b-*
+# patches integrated in bashdb: builtins-shift, execute-cmd, man-arithmetic,
+#     man-builtin, man-fignore, random, rbash-manpage, report-155436,
+#     rl-8bit-init, s390-build
+# and bashdb patch
+#	rbash-manpage \
+
+bashdb_patches = \
+	bashdb \
+	rl-examples-bdb \
+	rl-inputrc \
+	bashbug-editor \
+	deb-bash-config \
+	deb-examples \
+	privmode \
+
+#	various \
+
+# these are applied in bashdb cvs as well
+#	man-arithmetic \
+#	man-fignore \
+#	random \
+#	report-155436 \
+#	s390-build \
+#	builtins-shift
+
+patch-$(bash_src): stamps/stamp-patch-$(bash_src)
+stamps/stamp-patch-$(bash_src): stamps/stamp-unpack-$(bash_src) \
+    $(foreach p,$(bash_patches),stamps/stamp-patch-$(bash_src)-$(p))
+	echo -e "\nPatches applied in this version:" > pxxx
+	for i in $(bash_patches); do \
+	  echo -e "\n$$i:" >> pxxx; \
+	  sed -n 's/^# *DP: */  /p' $(patchdir)/$$i.dpatch >> pxxx; \
+	done
+	mv -f pxxx $@
+
+stamps/stamp-patch-$(bash_src)-%: $(patchdir)/%.dpatch
+	if [ -x $< ]; then true; else chmod +x $<; fi
+	if [ -f $@ ]; then \
+	  echo "$* patches already applied."; exit 1; \
+	fi
+	$< -patch -d $(bash_src)
+	echo "$* patches applied." > $@
+
+unpack-$(bash_src): stamps/stamp-unpack-$(bash_src)
+stamps/stamp-unpack-$(bash_src):
+	mkdir -p stamps
+	rm -rf bash-$(VERSION) $(bash_src)
+	rm -f stamps/stamp-patch-$(bash_src){,-*}
+	tar xfz bash-$(VERSION)*.tar.gz
+	mv bash-$(VERSION) $(bash_src)
+	cp -p /usr/share/misc/config.* $(bash_src)/.
+	cp -p /usr/share/misc/config.* $(bash_src)/support/.
+	touch stamps/stamp-unpack-$(bash_src)
+
+.PHONY: unpack patch binary binary-arch binary-indep clean \
+    build bash-build minimal-build static-build preinst-build \
+    all-bashdb-build bashdb-build bashdb-doc-build \
+    check \
+    bash-configure minimal-configure static-configure bashdb-configure \
+    binary-doc binary-bash binary-builtins binary-static binary-bashdb \
+    install bash-install bashdb-install
+
+# Local Variables:
+# mode: makefile
+# end:

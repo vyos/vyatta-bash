@@ -1,0 +1,85 @@
+Source: bash
+Section: base
+Priority: required
+Maintainer: Matthias Klose <doko@debian.org>
+Standards-Version: 3.6.2
+Build-Depends: autoconf, patch, bison, libncurses5-dev, texinfo, autotools-dev, debhelper (>= 4.1), texi2html, locales
+Build-Depends-Indep: tetex-bin
+
+Package: bash
+Architecture: any
+Pre-Depends: ${shlibs:Pre-Depends}
+Depends: base-files (>= 2.1.12), debianutils (>= 2.15)
+Conflicts: bash-completion
+Replaces: bash-doc (<= 2.05-1), bash-completion
+Suggests: bash-doc
+Essential: yes
+Section: shells
+Priority: required
+Description: The GNU Bourne Again SHell
+ Bash is an sh-compatible command language interpreter that executes
+ commands read from the standard input or from a file.  Bash also
+ incorporates useful features from the Korn and C shells (ksh and csh).
+ .
+ Bash is ultimately intended to be a conformant implementation of the
+ IEEE POSIX Shell and Tools specification (IEEE Working Group 1003.2).
+ .
+ Included in the bash package is the Programmable Completion Code, by
+ Ian Macdonald.
+
+Package: bash-minimal
+Architecture: any
+Depends: ${shlibs:Depends}, passwd (>= 1:4.0.3-10)
+Suggests: bash-doc
+Section: shells
+Priority: optional
+Description: The GNU Bourne Again SHell (minimal version)
+ Bash is an sh-compatible command language interpreter that executes
+ commands read from the standard input or from a file.  Bash also
+ incorporates useful features from the Korn and C shells (ksh and csh).
+ .
+ Configured using --enable-minimal-config.
+
+Package: bash-static
+Architecture: any
+Depends: passwd (>= 1:4.0.3-10)
+Suggests: bash-doc
+Section: shells
+Priority: optional
+Description: The GNU Bourne Again SHell (static version)
+ Bash is an sh-compatible command language interpreter that executes
+ commands read from the standard input or from a file.  Bash also
+ incorporates useful features from the Korn and C shells (ksh and csh).
+ .
+ Statically linked.
+
+Package: bash-builtins
+Architecture: any
+Depends: bash (= ${Source-Version})
+Section: utils
+Priority: optional
+Description: Bash loadable builtins - headers & examples
+ Bash can dynamically load new builtin commands.  Included are the
+ necessary headers to compile your own builtins and lots of examples.
+
+Package: bash-doc
+Architecture: all
+Section: doc
+Priority: optional
+Description: Documentation and examples for the The GNU Bourne Again SHell
+ Bash is an sh-compatible command language interpreter that executes
+ commands read from the standard input or from a file.  Bash also
+ incorporates useful features from the Korn and C shells (ksh and csh).
+ .
+ This package contains the documentation in info format, all the
+ examples and the main changelog.
+
+Package: bashdb
+Architecture: any
+Depends: ${shlibs:Depends}
+Suggests: bash-doc
+Section: shells
+Priority: optional
+Description: The GNU Bourne Again SHell Debugger
+ The bash debugger is a patched version of bash 2.05b to provide
+ debugging support and better error reporting.

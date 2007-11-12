@@ -1,0 +1,4 @@
+bash (2.05b-4) unstable; urgency=low
+
+  * Remove /bin/sh symlink from package.
+  * Pre-Depend on base-files (>= 3.0.5), which contains the symlink.

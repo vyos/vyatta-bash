@@ -1,0 +1,7 @@
+#! /bin/sh -e
+
+install-info --quiet --section "Shells" "Shells"  \
+    --description="Debugging with the BASH debugger" \
+	/usr/share/info/bashdb.info.gz
+
+#DEBHELPER#

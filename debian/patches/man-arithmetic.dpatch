@@ -1,0 +1,32 @@
+#! /bin/sh -e
+
+if [ $# -eq 3 -a "$2" = '-d' ]; then
+    pdir="-d $3"
+elif [ $# -ne 1 ]; then
+    echo >&2 "`basename $0`: script expects -patch|-unpatch as argument"
+    exit 1
+fi
+case "$1" in
+    -patch) patch $pdir -f --no-backup-if-mismatch -p1 < $0;;
+    -unpatch) patch $pdir -f --no-backup-if-mismatch -R -p1 < $0;;
+    *)
+	echo >&2 "`basename $0`: script expects -patch|-unpatch as argument"
+	exit 1
+esac
+exit 0
+
+# DP: document deprecated syntax for arithmetic evaluation.
+
+diff -urb bash.orig/doc/bash.1 bash/doc/bash.1
+--- bash.orig/doc/bash.1	2003-09-25 21:42:45.000000000 +0200
++++ bash/doc/bash.1	2003-09-28 00:24:17.000000000 +0200
+@@ -2533,6 +2533,9 @@
+ \fB$((\fP\fIexpression\fP\fB))\fP
+ .RE
+ .PP
++The old format \fB$[\fP\fIexpression\fP\fB]\fP is deprecated and will
++be removed in upcoming versions of bash.
++.PP
+ The
+ .I expression
+ is treated as if it were within double quotes, but a double quote

@@ -1,0 +1,30 @@
+#! /bin/sh -e
+
+if [ $# -eq 3 -a "$2" = '-d' ]; then
+    pdir="-d $3"
+elif [ $# -ne 1 ]; then
+    echo >&2 "`basename $0`: script expects -patch|-unpatch as argument"
+    exit 1
+fi
+case "$1" in
+    -patch) patch $pdir -f --no-backup-if-mismatch -p0 < $0;;
+    -unpatch) patch $pdir -f --no-backup-if-mismatch -R -p0 < $0;;
+    *)
+	echo >&2 "`basename $0`: script expects -patch|-unpatch as argument"
+	exit 1
+esac
+exit 0
+
+# DP: Define PGRP_PIPE to avoid race condition.
+
+--- input.c~	2005-07-14 13:29:08.000000000 +0100
++++ input.c	2006-04-05 14:51:50.000000000 +0100
+@@ -454,7 +454,7 @@
+       if (nr == 0)
+ 	bp->b_flag |= B_EOF;
+       else
+-	bp->b_flag |= B_ERROR;
++	fatal_error("error reading input file: %s", strerror(errno));
+       return (EOF);
+     }
+ 

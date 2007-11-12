@@ -1,0 +1,8 @@
+#! /bin/bash -e
+
+if [ $1 != "upgrade" ]; then
+    update-alternatives --remove builtins.7.gz \
+	/usr/share/man/man7/bash-builtins.7.gz
+fi
+
+#DEBHELPER#

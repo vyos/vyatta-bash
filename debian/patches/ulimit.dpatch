@@ -1,0 +1,88 @@
+#! /bin/sh -e
+
+if [ $# -eq 3 -a "$2" = '-d' ]; then
+    pdir="-d $3"
+elif [ $# -ne 1 ]; then
+    echo >&2 "`basename $0`: script expects -patch|-unpatch as argument"
+    exit 1
+fi
+case "$1" in
+    -patch) patch $pdir -f --no-backup-if-mismatch -p1 < $0;;
+    -unpatch) patch $pdir -f --no-backup-if-mismatch -R -p1 < $0;;
+    *)
+	echo >&2 "`basename $0`: script expects -patch|-unpatch as argument"
+	exit 1
+esac
+exit 0
+
+# DP: Add ulimit options -e and -r.
+
+--- bash-3.1/builtins/ulimit.def.ulimit	2005-08-04 13:39:04.000000000 +0100
++++ bash-3.1/builtins/ulimit.def	2006-01-10 11:21:49.000000000 +0000
+@@ -34,6 +34,7 @@
+     -a	all current limits are reported
+     -c	the maximum size of core files created
+     -d	the maximum size of a process's data segment
++    -e	the maximum scheduling priority (`nice')
+     -f	the maximum size of files created by the shell
+     -i  the maximum number of pending signals
+     -l	the maximum size a process may lock into memory
+@@ -41,6 +42,7 @@
+     -n	the maximum number of open file descriptors
+     -p	the pipe buffer size
+     -q  the maximum number of bytes in POSIX message queues
++    -r	the maximum rt priority
+     -s	the maximum stack size
+     -t	the maximum amount of cpu time in seconds
+     -u	the maximum number of user processes
+@@ -202,6 +204,9 @@
+ #ifdef RLIMIT_DATA
+   { 'd',	RLIMIT_DATA,  1024,	"data seg size",	"kbytes" },
+ #endif
++#ifdef RLIMIT_NICE
++  { 'e',	RLIMIT_NICE, 1,		"max nice",		(char *)NULL},
++#endif /* RLIMIT_NICE */
+   { 'f',	RLIMIT_FILESIZE, 1024,	"file size",		"blocks" },
+ #ifdef RLIMIT_SIGPENDING
+   { 'i',	RLIMIT_SIGPENDING, 1,	"pending signals",	(char *)NULL },
+@@ -217,6 +222,9 @@
+ #ifdef RLIMIT_MSGQUEUE
+   { 'q',	RLIMIT_MSGQUEUE, 1,	"POSIX message queues",	"bytes" },
+ #endif
++#ifdef RLIMIT_RTPRIO
++  { 'r',	RLIMIT_RTPRIO, 1,	"max rt priority",	(char *)NULL},
++#endif /* RLIMIT_RTPRIO */
+ #ifdef RLIMIT_STACK
+   { 's',	RLIMIT_STACK, 1024,	"stack size",		"kbytes" },
+ #endif
+--- bash-3.1/doc/bash.1.ulimit	2006-01-10 11:21:49.000000000 +0000
++++ bash-3.1/doc/bash.1	2006-01-10 11:24:43.000000000 +0000
+@@ -8496,7 +8496,7 @@
+ returns true if any of the arguments are found, false if
+ none are found.
+ .TP
+-\fBulimit\fP [\fB\-SHacdfilmnpqstuvx\fP [\fIlimit\fP]]
++\fBulimit\fP [\fB\-SHacdefilmnpqrstuvx\fP [\fIlimit\fP]]
+ Provides control over the resources available to the shell and to
+ processes started by it, on systems that allow such control.
+ The \fB\-H\fP and \fB\-S\fP options specify that the hard or soft limit is
+@@ -8532,6 +8532,9 @@
+ .B \-d
+ The maximum size of a process's data segment
+ .TP
++.B \-e
++The maximum scheduling priority (`nice')
++.TP
+ .B \-f
+ The maximum size of files created by the shell
+ .TP
+@@ -8554,6 +8557,9 @@
+ .B \-q
+ The maximum number of bytes in POSIX message queues
+ .TP
++.B \-r
++The maximum rt priority
++.TP
+ .B \-s
+ The maximum stack size
+ .TP

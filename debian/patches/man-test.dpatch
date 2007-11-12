@@ -1,0 +1,32 @@
+#! /bin/sh -e
+
+if [ $# -eq 3 -a "$2" = '-d' ]; then
+    pdir="-d $3"
+elif [ $# -ne 1 ]; then
+    echo >&2 "`basename $0`: script expects -patch|-unpatch as argument"
+    exit 1
+fi
+case "$1" in
+    -patch) patch $pdir -f --no-backup-if-mismatch -p0 < $0;;
+    -unpatch) patch $pdir -f --no-backup-if-mismatch -R -p0 < $0;;
+    *)
+	echo >&2 "`basename $0`: script expects -patch|-unpatch as argument"
+	exit 1
+esac
+exit 0
+
+# DP: document conditional file expressions acting on the target of
+# DP: symbolic links as well (except -h, -L).
+
+--- builtins/test.def~	2002-04-04 21:48:17.000000000 +0200
++++ builtins/test.def	2004-10-16 19:51:24.000000000 +0200
+@@ -60,6 +60,9 @@
+ 
+   FILE1 -ef FILE2  True if file1 is a hard link to file2.
+ 
++All file operators except -h and -L are acting on the target of a symbolic
++link, not on the symlink itself, if FILE is a symbolic link.
++
+ String operators:
+ 
+     -z STRING      True if string is empty.

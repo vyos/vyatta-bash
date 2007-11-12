@@ -1,0 +1,15 @@
+#! /bin/sh -e
+
+if [ "$1" = "purge" ]; then
+  rm -f /etc/bash_completion
+  rmdir --ignore-fail-on-non-empty /etc/bash_completion.d
+fi
+
+if [ -x /usr/sbin/remove-shell ] && [ -f /etc/shells ]; then
+    /usr/sbin/remove-shell /bin/bash
+    /usr/sbin/remove-shell /bin/rbash
+fi
+
+#DEBHELPER#
+
+exit 0
