@@ -1,0 +1,14 @@
+\input texinfo.tex @c -*- texinfo -*-
+@c %**start of header
+@setfilename bashref.info
+@settitle Bash Reference Manual
+@c %**end of header
+
+@dircategory Basics
+@direntry
+* Bash: (bash).                     The GNU Bourne-Again SHell.
+@end direntry
+
+@finalout
+
+@bye
