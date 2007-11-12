@@ -39,16 +39,10 @@ PWD	:= $(shell pwd)
 p	= bash
 p_min	= bash-minimal
 p_stat	= bash-static
-p_bins	= bash-builtins
-p_doc	= bash-doc
-p_bdb	= bashdb
 
 d	= debian/$(p)
 d_min	= debian/$(p_min)
 d_stat	= debian/$(p_stat)
-d_bins	= debian/$(p_bins)
-d_doc	= debian/$(p_doc)
-d_bdb	= debian/$(p_bdb)
 
 conf_args = \
 	--with-curses \
@@ -214,17 +208,12 @@ bash-install: bash-build stamps/stamp-install-bash
 stamps/stamp-install-bash: stamps/stamp-build-bash
 	dh_testdir
 	dh_testroot
-	dh_clean -k -p$(p) -p$(p_doc) -p$(p_bins)
+	dh_clean -k -p$(p)
 	dh_installdirs -p$(p) \
 		bin \
 		etc/skel \
 		etc/bash_completion.d \
 		usr/share/doc/$(p)
-	dh_installdirs -p$(p_doc) \
-		usr/share/doc/$(p)
-	dh_installdirs -p$(p_bins) \
-		usr/share/doc/$(p)/examples/loadables \
-		usr/{include/bash/{builtins,lib/{glob,tilde}}}
 
 ifeq ($(with_gfdl),yes)
 # XXXXX
@@ -279,99 +268,13 @@ ifeq ($(with_gfdl),yes)
 	: # files for the bash-doc package
 	mv $(d)/usr/share/info/bash.info $(d)/usr/share/info/bashref.info
 	ln -sf bashref.info $(d)/usr/share/info/bash.info
-	mv $(d)/usr/share/info $(d_doc)/usr/share/
+	: # mv $(d)/usr/share/info $(d_doc)/usr/share/
+	rm -rf $(d)/usr/share/info
 endif
-
-	dh_installexamples -p$(p_doc) bash/examples/*
-	mv $(d_doc)/usr/share/doc/$(p_doc)/examples \
-		$(d_doc)/usr/share/doc/$(p)/examples
-	rm -rf $(d_doc)/usr/share/doc/$(p)/examples/loadables
-	ln -sf ../$(p)/examples $(d_doc)/usr/share/doc/$(p_doc)/examples
-
-	cd $(d_doc)/usr/share/doc/$(p)/examples && chmod 644 \
-		*bashdb/PERMISSION complete/complete.gnu-longopt
-	cd $(d_doc)/usr/share/doc/$(p)/examples && chmod 755 \
-		misc/aliasconv.*sh misc/cshtobash
-
-	cd $(d_doc)/usr/share/doc/$(p)/examples && chmod 644 \
-		scripts/shprompt scripts/precedence \
-		scripts/bcsh.sh scripts/krand.bash
-
-	: # files for the bash-builtins package
-	$(ID) bash/include/*.h bash/*.h  $(d_bins)/usr/include/bash/
-	$(ID) build-bash/*.h $(d_bins)/usr/include/bash/
-	rm -f $(d_bins)/usr/include/bash/y.tab.h
-	$(ID) bash/builtins/*.h $(d_bins)/usr/include/bash/builtins/
-	$(ID) bash/lib/glob/*.h $(d_bins)/usr/include/bash/lib/glob/
-	$(ID) bash/lib/tilde/*.h $(d_bins)/usr/include/bash/lib/tilde/
-	$(ID) bash/examples/loadables/{README,*.c} \
-		$(d_bins)/usr/share/doc/$(p)/examples/loadables
-	$(ID) build-bash/examples/loadables/Makefile \
-		$(d_bins)/usr/share/doc/$(p)/examples/loadables
-	ln -sf bash $(d_bins)/usr/share/doc/$(p_bins)
 
 	cat debian/README stamps/stamp-patch-bash > debian/README.Debian
 
 	touch stamps/stamp-install-bash
-
-bashdb-install: stamps/stamp-install-bashdb
-stamps/stamp-install-bashdb: stamps/stamp-build-bashdb
-	dh_testdir
-	dh_testroot
-	dh_clean -k -p$(p_bdb)
-	dh_installdirs -p$(p_bdb) \
-		usr/share/doc/$(p_bdb) \
-		usr/share/emacs/site-lisp/$(p_bdb)
-
-	: # install it
-	$(MAKE) -C build-bashdb install \
-		CC='$(CC)' \
-		CFLAGS='$(CFLAGS)' \
-		YACC="$(YACC)" \
-		DESTDIR=$(PWD)/$(d_bdb)
-	rm -f $(d_bdb)/usr/bin/bashbug
-	rm -f $(d_bdb)/usr/share/man/man1/bashbug.1
-	rm -f $(d_bdb)/usr/share/info/*
-
-	mv $(d_bdb)/usr/share/man/man1/bash.1 \
-		$(d_bdb)/usr/share/man/man1/bash+dbg.1
-
-	$(MAKE) -C build-bashdb/debugger/doc install \
-		DESTDIR=$(PWD)/$(d_bdb)
-	cp -p build-bashdb/debugger/doc/bashdb.html \
-		$(d_bdb)/usr/share/doc/$(p_bdb)/.
-	cp -p build-bashdb/debugger/doc/bashdb.1 \
-		$(d_bdb)/usr/share/man/man1/.
-
-	: # some corrections
-	mv $(d_bdb)/usr/bin/bash $(d_bdb)/usr/bin/bash+dbg
-	sed -e 's,/usr/bin/bash,/usr/bin/bash+dbg,g' \
-	    -e 's,/lib/bashdb,/share/bashdb,g' \
-		$(d_bdb)/usr/bin/bashdb > $(d_bdb)/usr/bin/bashdb.new
-	mv -f $(d_bdb)/usr/bin/bashdb.new $(d_bdb)/usr/bin/bashdb
-	chmod 755 $(d_bdb)/usr/bin/bashdb
-	cp -p bashdb/debugger/emacs/*.el \
-		$(d_bdb)/usr/share/emacs/site-lisp/$(p_bdb)/
-
-	touch stamps/stamp-install-bashdb
-
-binary-doc: bash-install bash-doc-build
-	dh_testdir
-	dh_testroot
-	mkdir -p $(d_doc)/usr/share/doc/$(p)
-	dh_installdocs -p$(p_doc) 
-ifeq ($(with_gfdl),yes)
-	cp -p build-bash/doc/bashref.pdf $(d_doc)/usr/share/doc/$(p)/.
-	dh_link -p$(p_doc) \
-	    /usr/share/doc/$(p)/bashref.pdf /usr/share/doc/$(p_doc)/bashref.pdf
-endif
-	dh_installchangelogs -p$(p_doc)
-	dh_compress -p$(p_doc) -Xexamples -X.pdf
-	dh_fixperms -p$(p_doc)
-	dh_installdeb -p$(p_doc)
-	dh_gencontrol -p$(p_doc)
-	dh_md5sums -p$(p_doc)
-	dh_builddeb -p$(p_doc)
 
 binary-bash: bash-install debian/bash.preinst
 	dh_testdir
@@ -395,19 +298,6 @@ endif
 	dh_gencontrol -p$(p)
 	dh_md5sums -p$(p)
 	dh_builddeb -p$(p)
-
-# Even though it contains only headers and example files,
-# bash-builtins is NOT arch-independent because the config.h* files
-# differ on different archs.
-binary-builtins: bash-install
-	dh_testdir
-	dh_testroot
-	dh_compress -p$(p_bins) -Xexamples
-	dh_fixperms -p$(p_bins)
-	dh_installdeb -p$(p_bins)
-	dh_gencontrol -p$(p_bins)
-	dh_md5sums -p$(p_bins)
-	dh_builddeb -p$(p_bins)
 
 binary-static: static-build
 	dh_testdir
@@ -447,27 +337,6 @@ binary-minimal: minimal-build
 	dh_gencontrol -p$(p_min)
 	dh_md5sums -p$(p_min)
 	dh_builddeb -p$(p_min)
-
-binary-bashdb: bashdb-install
-	dh_testdir
-	dh_testroot
-	dh_installdocs -p$(p_bdb) \
-		bashdb/{CHANGES,NEWS,README}
-	cp -p debian/README.bashdb $(d_bdb)/usr/share/doc/$(p_bdb)/README.Debian
-	for i in AUTHORS CHANGES NEWS README THANKS TODO; do \
-	  cp -p bashdb/debugger/$$i \
-	    $(d_bdb)/usr/share/doc/$(p_bdb)/$$i.bashdb; \
-	done
-	dh_installdocs -p$(p_bdb)
-	dh_installchangelogs -p$(p_bdb) bashdb/debugger/ChangeLog
-	dh_installemacsen -p$(p_bdb)
-	dh_strip -p$(p_bdb)
-	dh_compress -p$(p_bdb)
-	dh_fixperms -p$(p_bdb)
-	dh_installdeb -p$(p_bdb)
-	dh_gencontrol -p$(p_bdb)
-	dh_md5sums -p$(p_bdb)
-	dh_builddeb -p$(p_bdb)
 
 binary-indep: binary-doc
 binary-arch: binary-bash binary-builtins binary-static binary-minimal #binary-bashdb
@@ -612,8 +481,13 @@ stamps/stamp-unpack-$(bash_src):
 	mkdir -p stamps
 	rm -rf bash-$(VERSION) $(bash_src)
 	rm -f stamps/stamp-patch-$(bash_src){,-*}
-	tar xfz bash-$(VERSION)*.tar.gz
-	mv bash-$(VERSION) $(bash_src)
+	tar c --exclude='bash-src.tar' --exclude='debian' --exclude='.git' \
+				--exclude='stamps' --exclude='bash' --exclude='build-bash' \
+				--exclude='build-min' --exclude='build-static' \
+				-f bash-src.tar .
+	mkdir -p $(bash_src)
+	tar x -C $(bash_src) -f bash-src.tar
+	rm -f bash-src.tar
 	cp -p /usr/share/misc/config.* $(bash_src)/.
 	cp -p /usr/share/misc/config.* $(bash_src)/support/.
 	touch stamps/stamp-unpack-$(bash_src)

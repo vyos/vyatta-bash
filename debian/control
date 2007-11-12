@@ -53,33 +53,3 @@ Description: The GNU Bourne Again SHell (static version)
  .
  Statically linked.
 
-Package: bash-builtins
-Architecture: any
-Depends: bash (= ${Source-Version})
-Section: utils
-Priority: optional
-Description: Bash loadable builtins - headers & examples
- Bash can dynamically load new builtin commands.  Included are the
- necessary headers to compile your own builtins and lots of examples.
-
-Package: bash-doc
-Architecture: all
-Section: doc
-Priority: optional
-Description: Documentation and examples for the The GNU Bourne Again SHell
- Bash is an sh-compatible command language interpreter that executes
- commands read from the standard input or from a file.  Bash also
- incorporates useful features from the Korn and C shells (ksh and csh).
- .
- This package contains the documentation in info format, all the
- examples and the main changelog.
-
-Package: bashdb
-Architecture: any
-Depends: ${shlibs:Depends}
-Suggests: bash-doc
-Section: shells
-Priority: optional
-Description: The GNU Bourne Again SHell Debugger
- The bash debugger is a patched version of bash 2.05b to provide
- debugging support and better error reporting.
