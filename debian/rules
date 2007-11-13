@@ -72,7 +72,7 @@ min_conf_args += --host=$(DEB_HOST_GNU_TYPE)
 
 
 #build: bash-build minimal-build static-build preinst-build all-bashdb-build check
-build: before-build bash-build minimal-build static-build preinst-build check
+build: before-build bash-build minimal-build static-build preinst-build
 
 before-build:
 	: # see #327477, needed to have HAVE_DEV_STDIN defined
@@ -272,7 +272,8 @@ ifeq ($(with_gfdl),yes)
 	rm -rf $(d)/usr/share/info
 endif
 
-	cat debian/README stamps/stamp-patch-bash > debian/README.Debian
+	: # cat debian/README stamps/stamp-patch-bash > debian/README.Debian
+	cat debian/README > debian/README.Debian
 
 	touch stamps/stamp-install-bash
 
@@ -362,7 +363,7 @@ endif
 	touch stamps/stamp-build-$(build)
 
 do-configure-$(build): stamps/stamp-configure-$(build)
-stamps/stamp-configure-$(build): stamps/stamp-patch-$(bash_src)
+stamps/stamp-configure-$(build): stamps/stamp-unpack-$(bash_src)
 	dh_testdir
 	rm -rf build-$(build)
 	mkdir build-$(build)
@@ -458,23 +459,23 @@ bashdb_patches = \
 #	s390-build \
 #	builtins-shift
 
-patch-$(bash_src): stamps/stamp-patch-$(bash_src)
-stamps/stamp-patch-$(bash_src): stamps/stamp-unpack-$(bash_src) \
-    $(foreach p,$(bash_patches),stamps/stamp-patch-$(bash_src)-$(p))
-	echo -e "\nPatches applied in this version:" > pxxx
-	for i in $(bash_patches); do \
-	  echo -e "\n$$i:" >> pxxx; \
-	  sed -n 's/^# *DP: */  /p' $(patchdir)/$$i.dpatch >> pxxx; \
-	done
-	mv -f pxxx $@
+#patch-$(bash_src): stamps/stamp-patch-$(bash_src)
+#stamps/stamp-patch-$(bash_src): stamps/stamp-unpack-$(bash_src) \
+#    $(foreach p,$(bash_patches),stamps/stamp-patch-$(bash_src)-$(p))
+#	echo -e "\nPatches applied in this version:" > pxxx
+#	for i in $(bash_patches); do \
+#	  echo -e "\n$$i:" >> pxxx; \
+#	  sed -n 's/^# *DP: */  /p' $(patchdir)/$$i.dpatch >> pxxx; \
+#	done
+#	mv -f pxxx $@
 
-stamps/stamp-patch-$(bash_src)-%: $(patchdir)/%.dpatch
-	if [ -x $< ]; then true; else chmod +x $<; fi
-	if [ -f $@ ]; then \
-	  echo "$* patches already applied."; exit 1; \
-	fi
-	$< -patch -d $(bash_src)
-	echo "$* patches applied." > $@
+#stamps/stamp-patch-$(bash_src)-%: $(patchdir)/%.dpatch
+#	if [ -x $< ]; then true; else chmod +x $<; fi
+#	if [ -f $@ ]; then \
+#	  echo "$* patches already applied."; exit 1; \
+#	fi
+#	$< -patch -d $(bash_src)
+#	echo "$* patches applied." > $@
 
 unpack-$(bash_src): stamps/stamp-unpack-$(bash_src)
 stamps/stamp-unpack-$(bash_src):
