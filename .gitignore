@@ -1,1 +1,10 @@
 .*.swp
+
+/bash
+/build-bash
+/clear_console
+/debian/README.Debian
+/debian/files
+/debian/vyatta-bash.substvars
+/debian/vyatta-bash
+/stamps
