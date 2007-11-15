@@ -1,3 +1,9 @@
+vyatta-bash (0.1) unstable; urgency=low
+  
+  * Initial release based on bash 3.1dfsg-8.
+
+ -- An-Cheng Huang <ancheng@vyatta.com>  Mon, 12 Nov 2007 17:14:43 -0700
+
 bash (3.1dfsg-8) unstable; urgency=high
 
   * bash-doc: Install copyright file when building without the

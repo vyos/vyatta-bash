@@ -96,7 +96,7 @@ OBJEXT = @OBJEXT@
 VERSPROG = bashversion$(EXEEXT)
 VERSOBJ = bashversion.$(OBJEXT)
 
-Program = bash$(EXEEXT)
+Program = vbash$(EXEEXT)
 Version = @BASHVERS@
 PatchLevel = `$(BUILD_DIR)/$(VERSPROG) -p`
 RELSTATUS = @RELSTATUS@
@@ -508,7 +508,7 @@ CREATED_MAKEFILES = Makefile builtins/Makefile doc/Makefile \
 # Keep GNU Make from exporting the entire environment for small machines.
 .NOEXPORT:
 
-.made: $(Program) bashbug
+.made: $(Program)
 	@echo "$(Program) last made for a $(Machine) running $(OS)" >.made
 
 $(Program):  .build $(OBJECTS) $(BUILTINS_DEP) $(LIBDEP)
@@ -525,14 +525,6 @@ $(Program):  .build $(OBJECTS) $(BUILTINS_DEP) $(LIBDEP)
 	@echo "	  *                                                         *"
 	@echo "	  ***********************************************************"
 	@echo
-
-bashbug: $(SUPPORT_SRC)bashbug.sh config.h Makefile $(VERSPROG)
-	@sed -e "s%!MACHINE!%$(Machine)%" -e "s%!OS!%$(OS)%" \
-	     -e "s%!CFLAGS!%$(CCFLAGS)%" -e "s%!CC!%$(CC)%" \
-	     -e "s%!RELEASE!%$(Version)%" -e "s%!PATCHLEVEL!%$(PatchLevel)%" \
-	     -e "s%!MACHTYPE!%$(MACHTYPE)%" -e "s%!RELSTATUS!%$(RELSTATUS)%" \
-	     $(SUPPORT_SRC)bashbug.sh > $@
-	@chmod a+rx bashbug
 
 strip:	$(Program) .made
 	strip $(Program)
@@ -696,19 +688,9 @@ TAGS:	$(SOURCES) $(BUILTIN_C_SRC) $(LIBRARY_SOURCE)
 
 installdirs:
 	@${SHELL} $(SUPPORT_SRC)mkinstalldirs $(DESTDIR)$(bindir)
-	@${SHELL} $(SUPPORT_SRC)mkinstalldirs $(DESTDIR)$(man1dir)
-	@${SHELL} $(SUPPORT_SRC)mkinstalldirs $(DESTDIR)$(infodir)
-	-( cd $(PO_DIR) ; $(MAKE) $(MFLAGS) DESTDIR=$(DESTDIR) $@ )
 
 install:	.made installdirs
 	$(INSTALL_PROGRAM) $(INSTALLMODE) $(Program) $(DESTDIR)$(bindir)/$(Program)
-	$(INSTALL_SCRIPT) $(INSTALLMODE2) bashbug $(DESTDIR)$(bindir)/bashbug
-	-( cd $(DOCDIR) ; $(MAKE) $(MFLAGS) \
-		man1dir=$(man1dir) man1ext=$(man1ext) \
-		man3dir=$(man3dir) man3ext=$(man3ext) \
-		infodir=$(infodir) htmldir=$(htmldir) DESTDIR=$(DESTDIR) $@ )
-	-( cd $(DEFDIR) ; $(MAKE) $(MFLAGS) DESTDIR=$(DESTDIR) $@ )
-	-( cd $(PO_DIR) ; $(MAKE) $(MFLAGS) DESTDIR=$(DESTDIR) $@ )
 
 install-strip:
 	$(MAKE) $(MFLAGS) INSTALL_PROGRAM='$(INSTALL_PROGRAM) -s' \
@@ -716,12 +698,6 @@ install-strip:
 		DESTDIR=$(DESTDIR) install
 
 uninstall:	.made
-	$(RM) $(DESTDIR)$(bindir)/$(Program) $(DESTDIR)$(bindir)/bashbug
-	-( cd $(DOCDIR) ; $(MAKE) $(MFLAGS) \
-		man1dir=$(man1dir) man1ext=$(man1ext) \
-		man3dir=$(man3dir) man3ext=$(man3ext) \
-		infodir=$(infodir) htmldir=$(htmldir) DESTDIR=$(DESTDIR) $@ )
-	-( cd $(PO_DIR) ; $(MAKE) $(MFLAGS) DESTDIR=$(DESTDIR) $@ )
 
 .PHONY: basic-clean clean realclean maintainer-clean distclean mostlyclean maybe-clean
 
@@ -729,7 +705,7 @@ LIB_SUBDIRS = ${RL_LIBDIR}  ${HIST_LIBDIR} ${TERM_LIBDIR} ${GLOB_LIBDIR} \
 		${INTL_LIBDIR} ${TILDE_LIBDIR} ${ALLOC_LIBDIR} ${SH_LIBDIR}
 
 basic-clean:
-	$(RM) $(OBJECTS) $(Program) bashbug
+	$(RM) $(OBJECTS) $(Program)
 	$(RM) .build .made version.h 
 
 clean:	basic-clean
