@@ -317,4 +317,7 @@ extern int group_member __P((gid_t));
 extern char **get_group_list __P((int *));
 extern int *get_group_array __P((int *));
 
+enum vyatta_restricted_type { OUTPUT, FULL };
+extern int in_vyatta_restricted_mode __P((enum vyatta_restricted_type));
+
 #endif	/* _GENERAL_H_ */

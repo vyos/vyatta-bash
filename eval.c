@@ -29,6 +29,7 @@
 
 #include "bashansi.h"
 #include <stdio.h>
+#include <dirent.h>
 
 #include "bashintl.h"
 
@@ -56,6 +57,11 @@ extern int expand_aliases;
 
 static void send_pwd_to_eterm __P((void));
 static sighandler alrm_catcher __P((int));
+
+#if defined (READLINE)
+extern char *current_readline_line;
+extern int current_readline_line_index;
+#endif
 
 /* Read and execute commands until EOF is reached.  This assumes that
    the input source has already been initialized. */
@@ -192,6 +198,83 @@ send_pwd_to_eterm ()
   fprintf (stderr, "\032/%s\n", pwd);
 }
 
+static int
+is_in_command_list(const char *cmd, const char *cmds[])
+{
+  int idx = 0;
+  for (idx = 0; cmds[idx]; idx++) {
+    if (strcmp(cmd, cmds[idx]) == 0) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+static int
+is_vyatta_cfg_command(const char *cmd)
+{
+  char *valid_commands[] = { "set", "delete", "commit", "save", "load",
+                             "show", "exit", "edit", "run", NULL };
+  return is_in_command_list(cmd, valid_commands);
+}
+
+static int
+is_vyatta_op_command(const char *cmd)
+{
+  char *dir = getenv("vyatta_op_templates");
+  DIR *dp = NULL;
+  struct dirent *dent = NULL;
+  char *other_commands[] = { "exit", NULL };
+  int ret = 0;
+
+  if (dir == NULL || (dp = opendir(dir)) == NULL) {
+    return 0;
+  }
+  while (dent = readdir(dp)) {
+    if (strncmp(dent->d_name, ".", 1) == 0) {
+      continue;
+    }
+    if (strcmp(dent->d_name, cmd) == 0) {
+      ret = 1;
+      break;
+    }
+  }
+  closedir(dp);
+  return (ret) ? 1 : is_in_command_list(cmd, other_commands);
+}
+
+static int
+is_vyatta_command(char *cmdline)
+{
+  char *cfg = getenv("_OFR_CONFIGURE");
+  int in_cfg = (cfg) ? (strcmp(cfg, "ok") == 0) : 0;
+  char *start = cmdline;
+  char *end = NULL;
+  char save = 0;
+  int ret = 0;
+  while (*start && (whitespace(*start) || *start == '\n')) {
+    start++;
+  }
+  if (*start == 0) {
+    /* empty command line */
+    return 1;
+  }
+  end = start;
+  while (*end && (!whitespace(*end) && *end != '\n')) {
+    end++;
+  }
+  save = *end;
+  *end = 0;
+
+  if (in_cfg) {
+    ret = is_vyatta_cfg_command(start);
+  } else {
+    ret = is_vyatta_op_command(start);
+  }
+  *end = save;
+  return ret;
+}
+
 /* Call the YACC-generated parser and return the status of the parse.
    Input is read from the current input stream (bash_input).  yyparse
    leaves the parsed command in the global variable GLOBAL_COMMAND.
@@ -220,6 +303,18 @@ parse_command ()
 
   current_command_line_count = 0;
   r = yyparse ();
+
+#if defined (READLINE)
+  if (in_vyatta_restricted_mode(FULL) && current_readline_line) {
+    if (!is_vyatta_command(current_readline_line)) {
+      printf("Invalid command\n");
+      current_readline_line_index = 0;
+      current_readline_line[0] = '\n';
+      current_readline_line[1] = '\0';
+      return 1;
+    }
+  }
+#endif
 
   if (need_here_doc)
     gather_here_documents ();

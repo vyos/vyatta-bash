@@ -1353,15 +1353,20 @@ programmable_completions (cmd, word, start, end, foundp)
   STRINGLIST *ret;
   char **rmatches, *t;
 
-  /* We look at the basename of CMD if the full command does not have
-     an associated COMPSPEC. */
-  cs = progcomp_search (cmd);
-  if (cs == 0)
-    {
-      t = strrchr (cmd, '/');
-      if (t)
-	cs = progcomp_search (++t);
-    }
+  if (in_vyatta_restricted_mode(OUTPUT) && strcmp(cmd, word) == 0) {
+    /* command completion */
+    cs = progcomp_search("");
+  } else {
+    /* We look at the basename of CMD if the full command does not have
+       an associated COMPSPEC. */
+    cs = progcomp_search (cmd);
+    if (cs == 0)
+      {
+        t = strrchr (cmd, '/');
+        if (t)
+          cs = progcomp_search (++t);
+      }
+  }
   if (cs == 0)
     {
       if (foundp)

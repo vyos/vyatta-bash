@@ -1067,7 +1067,8 @@ attempt_shell_completion (text, start, end)
 
 #if defined (PROGRAMMABLE_COMPLETION)
   /* Attempt programmable completion. */
-  if (!matches && in_command_position == 0 && prog_completion_enabled &&
+  if (!matches && prog_completion_enabled &&
+      (in_vyatta_restricted_mode(OUTPUT) || in_command_position == 0) &&
       (progcomp_size () > 0) && current_prompt_string == ps1_prompt)
     {
       int s, e, foundcs;
@@ -1081,7 +1082,9 @@ attempt_shell_completion (text, start, end)
       s = find_cmd_start (start);
       e = find_cmd_end (end);
       n = find_cmd_name (s);
-      if (e > s && assignment (n, 0) == 0)
+      if ((e > s || (in_vyatta_restricted_mode(OUTPUT) &&
+                     strcmp(n, text) == 0)) &&
+          assignment (n, 0) == 0)
 	prog_complete_matches = programmable_completions (n, text, s, e, &foundcs);
       else
 	foundcs = 0;
@@ -1125,6 +1128,11 @@ bash_default_completion (text, start, end, qc, in_command_position)
   char **matches;
 
   matches = (char **)NULL;
+
+  if (in_vyatta_restricted_mode(OUTPUT)) {
+    rl_ignore_some_completions_function = bash_ignore_everything;
+    return matches;
+  }
 
   /* New posix-style command substitution or variable name? */
   if (!matches && *text == '$')

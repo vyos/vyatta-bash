@@ -1023,3 +1023,25 @@ get_group_array (ngp)
     *ngp = ngroups;
   return group_iarray;
 }
+
+int
+in_vyatta_restricted_mode(enum vyatta_restricted_type type)
+{
+  char *rval = getenv("VYATTA_RESTRICTED_MODE");
+  int output = 0, full = 0;
+  if (rval == NULL) {
+    return 0;
+  }
+  output = (strcmp(rval, "output") == 0);
+  full = (strcmp(rval, "full") == 0);
+  
+  if (type == OUTPUT && (output || full)) {
+    return 1;
+  }
+  if (type == FULL && full) {
+    return 1;
+  }
+
+  return 0;
+}
+
