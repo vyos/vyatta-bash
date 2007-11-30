@@ -227,6 +227,54 @@ is_vyatta_restricted_pipe_command(WORD_LIST *words)
   return 0;
 }
 
+static void
+make_restricted_word(WORD_DESC *word)
+{
+  char *c, *ns, *n;
+  int sq_count = 0;
+  char *uqs = string_quote_removal(word->word, 0);
+  
+  for (c = uqs; *c; c++) {
+    if (*c == '\'') {
+      sq_count++;
+    }
+  }
+ 
+  /* strlen + start/end quotes + \0 + extra "'\''" */
+  ns = (char *) xmalloc(strlen(uqs) + 2 + 1 + (3 * sq_count));
+  n = ns;
+  *n = '\'';
+  n++;
+  for (c = uqs; *c; c++) {
+    if (*c == '\'') {
+      *n = '\'';
+      *(n + 1) = '\\';
+      *(n + 2) = '\'';
+      *(n + 3) = '\'';
+      n += 4;
+    } else {
+      *n = *c;
+      n++;
+    }
+  }
+  *n = '\'';
+  *(n + 1) = '\0';
+ 
+  free(word->word);
+  free(uqs);
+  word->word = ns;
+  word->flags = W_QUOTED;
+}
+
+static void
+make_restricted_wordlist(WORD_LIST *words)
+{
+  WORD_LIST *l = words->next; /* skip the first word */
+  for (; l; l = l->next) {
+    make_restricted_word(l->word);
+  }
+}
+
 static int
 is_vyatta_restricted_command(COMMAND *cmd)
 {
@@ -241,7 +289,9 @@ is_vyatta_restricted_command(COMMAND *cmd)
   case cm_simple:
     cS = cmd->value.Simple;
     if (!(cS->redirects)) {
-      /* simple command, no redirects => allowed */
+      /* simple command, no redirects */
+      /* make sure the words are allowed */
+      make_restricted_wordlist(cS->words);
       return 1;
     }
     break;
@@ -253,6 +303,9 @@ is_vyatta_restricted_command(COMMAND *cmd)
         struct simple_com *cS2 = cC->second->value.Simple;
         if (!(cS1->redirects) && !(cS2->redirects)) {
           /* both are simple and no redirects */
+          /* make sure the words are allowed */
+          make_restricted_wordlist(cS1->words);
+          make_restricted_wordlist(cS2->words);
           if (is_vyatta_restricted_pipe_command(cS2->words)) {
             /* pipe command is allowed => allowed */
             return 1;
