@@ -941,9 +941,12 @@ find_cmd_start (start)
   register int s, os;
 
   os = 0;
-  while (((s = skip_to_delim (rl_line_buffer, os, COMMAND_SEPARATORS)) <= start) &&
-	 rl_line_buffer[s])
-    os = s+1;
+  if (!in_vyatta_restricted_mode(OUTPUT)) {
+    while (((s = skip_to_delim (rl_line_buffer, os, COMMAND_SEPARATORS))
+            <= start)
+           && rl_line_buffer[s])
+      os = s+1;
+  }
   return os;
 }
 
@@ -953,7 +956,11 @@ find_cmd_end (end)
 {
   register int e;
 
-  e = skip_to_delim (rl_line_buffer, end, COMMAND_SEPARATORS);
+  if (!in_vyatta_restricted_mode(OUTPUT)) {
+    e = skip_to_delim (rl_line_buffer, end, COMMAND_SEPARATORS);
+  } else {
+    e = strlen(rl_line_buffer);
+  }
   return e;
 }
 
@@ -1038,7 +1045,9 @@ attempt_shell_completion (text, start, end)
     }
   else if (member (rl_line_buffer[ti], command_separator_chars))
     {
-      in_command_position++;
+      if (!in_vyatta_restricted_mode(OUTPUT)) {
+        in_command_position++;
+      }
 
       if (check_redir (ti) == 1)
 	in_command_position = 0;
@@ -1060,7 +1069,7 @@ attempt_shell_completion (text, start, end)
      it can be the start or end of an old-style command substitution, or
      unmatched.  If it's unmatched, both calls to unclosed_pair will
      succeed.  */
-  if (*text == '`' && 
+  if (*text == '`' && !in_vyatta_restricted_mode(OUTPUT) &&
 	(in_command_position || (unclosed_pair (rl_line_buffer, start, "`") &&
 				 unclosed_pair (rl_line_buffer, end, "`"))))
     matches = rl_completion_matches (text, command_subst_completion_function);

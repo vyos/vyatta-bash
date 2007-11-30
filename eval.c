@@ -199,7 +199,7 @@ send_pwd_to_eterm ()
 }
 
 static int
-is_in_command_list(const char *cmd, const char *cmds[])
+is_in_command_list(const char *cmd, char *cmds[])
 {
   int idx = 0;
   for (idx = 0; cmds[idx]; idx++) {
@@ -207,6 +207,64 @@ is_in_command_list(const char *cmd, const char *cmds[])
       return 1;
     }
   }
+  return 0;
+}
+
+static int
+is_vyatta_restricted_pipe_command(WORD_LIST *words)
+{
+  char *allowed_commands[] = { "more", NULL };
+  if (words) {
+    if (!words->next) {
+      /* only 1 word */
+      if (is_in_command_list(words->word->word, allowed_commands)) {
+        /* allowed */
+        return 1;
+      }
+    }
+  }
+  /* not allowed */
+  return 0;
+}
+
+static int
+is_vyatta_restricted_command(COMMAND *cmd)
+{
+  struct simple_com *cS;
+  struct connection *cC;
+
+  if (!cmd) {
+    return 1;
+  }
+
+  switch (cmd->type) {
+  case cm_simple:
+    cS = cmd->value.Simple;
+    if (!(cS->redirects)) {
+      /* simple command, no redirects => allowed */
+      return 1;
+    }
+    break;
+  case cm_connection:
+    cC = cmd->value.Connection;
+    if (cC->connector == '|') {
+      if ((cC->first->type == cm_simple) && (cC->second->type == cm_simple)) {
+        struct simple_com *cS1 = cC->first->value.Simple;
+        struct simple_com *cS2 = cC->second->value.Simple;
+        if (!(cS1->redirects) && !(cS2->redirects)) {
+          /* both are simple and no redirects */
+          if (is_vyatta_restricted_pipe_command(cS2->words)) {
+            /* pipe command is allowed => allowed */
+            return 1;
+          }
+        }
+      }
+    }
+    break;
+  default:
+    break;
+  }
+  /* not allowed */
   return 0;
 }
 
@@ -243,8 +301,10 @@ is_vyatta_op_command(const char *cmd)
   return (ret) ? 1 : is_in_command_list(cmd, other_commands);
 }
 
+static char *prev_cmdline = NULL;
+
 static int
-is_vyatta_command(char *cmdline)
+is_vyatta_command(char *cmdline, COMMAND *cmd)
 {
   char *cfg = getenv("_OFR_CONFIGURE");
   int in_cfg = (cfg) ? (strcmp(cfg, "ok") == 0) : 0;
@@ -252,11 +312,25 @@ is_vyatta_command(char *cmdline)
   char *end = NULL;
   char save = 0;
   int ret = 0;
+
+  if (!prev_cmdline) {
+    prev_cmdline = strdup("");
+  }
+  if (strcmp(cmdline, prev_cmdline) == 0) {
+    /* still at the same line. not checking. */
+    return 1;
+  }
+  if (!is_vyatta_restricted_command(cmd)) {
+    return 0;
+  }
+
   while (*start && (whitespace(*start) || *start == '\n')) {
     start++;
   }
   if (*start == 0) {
-    /* empty command line */
+    /* empty command line is valid */
+    free(prev_cmdline);
+    prev_cmdline = strdup(cmdline);
     return 1;
   }
   end = start;
@@ -272,6 +346,12 @@ is_vyatta_command(char *cmdline)
     ret = is_vyatta_op_command(start);
   }
   *end = save;
+
+  if (ret) {
+    /* valid command */
+    free(prev_cmdline);
+    prev_cmdline = strdup(cmdline);
+  }
   return ret;
 }
 
@@ -305,8 +385,9 @@ parse_command ()
   r = yyparse ();
 
 #if defined (READLINE)
-  if (in_vyatta_restricted_mode(FULL) && current_readline_line) {
-    if (!is_vyatta_command(current_readline_line)) {
+  if (interactive && in_vyatta_restricted_mode(FULL)
+      && current_readline_line) {
+    if (!is_vyatta_command(current_readline_line, global_command)) {
       printf("Invalid command\n");
       current_readline_line_index = 0;
       current_readline_line[0] = '\n';
