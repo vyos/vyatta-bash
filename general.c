@@ -1024,16 +1024,95 @@ get_group_array (ngp)
   return group_iarray;
 }
 
+static int
+vyatta_user_in_group(uid_t ruid, char *grp_name)
+{
+  int ret = 0;
+  struct passwd pw;
+  struct passwd *pwp = NULL;
+  struct group grp;
+  struct group *grpp = NULL;
+  char *pbuf = NULL, *gbuf = NULL;
+  long psize = 0, gsize = 0;
+
+  if (!grp_name) {
+    return 0;
+  }
+
+  do {
+    psize = sysconf(_SC_GETPW_R_SIZE_MAX);
+    pbuf = (char *) malloc(psize);
+    if (!pbuf) {
+      break;
+    }
+
+    gsize = sysconf(_SC_GETGR_R_SIZE_MAX);
+    gbuf = (char *) malloc(gsize);
+    if (!gbuf) {
+      break;
+    }
+
+    ret = getpwuid_r(ruid, &pw, pbuf, psize, &pwp);
+    if (!pwp) {
+      break;
+    }
+
+    ret = getgrnam_r(grp_name, &grp, gbuf, gsize, &grpp);
+    if (!grpp) {
+      break;
+    }
+
+    {
+      int i = 0;
+      for (i = 0; grp.gr_mem[i]; i++) {
+        if (strcmp(pw.pw_name, grp.gr_mem[i]) == 0) {
+          ret = 1;
+          break;
+        }
+      }
+    }
+  } while (0);
+
+  if (pbuf) {
+    free(pbuf);
+  }
+  if (gbuf) {
+    free(gbuf);
+  }
+  return ret;
+}
+
+static int vyatta_default_output_restricted = 0;
+static int vyatta_default_full_restricted = 0;
+
+#define VYATTA_OUTPUT_RESTRICTED_GROUP "vyattacfg"
+
+void
+set_vyatta_restricted_mode()
+{
+  uid_t ruid = getuid();
+  if (vyatta_user_in_group(ruid, VYATTA_OUTPUT_RESTRICTED_GROUP)) {
+    vyatta_default_output_restricted = 1;
+    vyatta_default_full_restricted = 0;
+  } else {
+    /* if not in the output restricted group, default to full */
+    vyatta_default_output_restricted = 0;
+    vyatta_default_full_restricted = 1;
+  }
+}
+
 int
 in_vyatta_restricted_mode(enum vyatta_restricted_type type)
 {
   char *rval = getenv("VYATTA_RESTRICTED_MODE");
-  int output = 0, full = 0;
-  if (rval == NULL) {
-    return 0;
+  int output = vyatta_default_output_restricted;
+  int full = vyatta_default_full_restricted;
+  
+  /* environment var overrides default */
+  if (rval) {
+    output = (strcmp(rval, "output") == 0);
+    full = (strcmp(rval, "full") == 0);
   }
-  output = (strcmp(rval, "output") == 0);
-  full = (strcmp(rval, "full") == 0);
   
   if (type == OUTPUT && (output || full)) {
     return 1;
