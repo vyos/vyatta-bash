@@ -1041,13 +1041,13 @@ vyatta_user_in_group(uid_t ruid, char *grp_name)
 
   do {
     psize = sysconf(_SC_GETPW_R_SIZE_MAX);
-    pbuf = (char *) malloc(psize);
+    pbuf = (char *) xmalloc(psize);
     if (!pbuf) {
       break;
     }
 
     gsize = sysconf(_SC_GETGR_R_SIZE_MAX);
-    gbuf = (char *) malloc(gsize);
+    gbuf = (char *) xmalloc(gsize);
     if (!gbuf) {
       break;
     }
