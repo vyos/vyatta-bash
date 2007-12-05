@@ -335,12 +335,23 @@ is_vyatta_op_command(const char *cmd)
   char *dir = getenv("vyatta_op_templates");
   DIR *dp = NULL;
   struct dirent *dent = NULL;
+  char *restrict_exclude_commands[]
+    = { "clear", "configure", "init-floppy", "install-system", "no",
+        "reboot", "set", "telnet", NULL };
   char *other_commands[] = { "exit", NULL };
   int ret = 0;
 
   if (dir == NULL || (dp = opendir(dir)) == NULL) {
     return 0;
   }
+
+  /* FIXME this assumes FULL == "users" */
+  if (in_vyatta_restricted_mode(FULL)
+      && is_in_command_list(cmd, restrict_exclude_commands)) {
+    /* command not allowed in "full" restricted mode */
+    return 0;
+  }
+
   while (dent = readdir(dp)) {
     if (strncmp(dent->d_name, ".", 1) == 0) {
       continue;
