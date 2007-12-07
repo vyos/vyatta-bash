@@ -43,17 +43,9 @@
 #  include <limits.h>
 #endif
 
-#if defined(HAVE_UNISTD_H)
-#  include <unistd.h>
-#endif
-
-#include <pwd.h>
-
-#if defined(HAVE_GRP_H)
-#  include <grp.h>
-#endif
-
 #include "xmalloc.h"
+
+#include "vyatta-restricted.h"
 
 /* NULL pointer type. */
 #if !defined (NULL)
@@ -326,9 +318,5 @@ extern char *bash_tilde_expand __P((const char *, int));
 extern int group_member __P((gid_t));
 extern char **get_group_list __P((int *));
 extern int *get_group_array __P((int *));
-
-extern void set_vyatta_restricted_mode __P((void));
-enum vyatta_restricted_type { OUTPUT, FULL };
-extern int in_vyatta_restricted_mode __P((enum vyatta_restricted_type));
 
 #endif	/* _GENERAL_H_ */

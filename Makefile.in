@@ -399,7 +399,7 @@ CSOURCES = shell.c eval.c parse.y general.c make_cmd.c print_cmd.c y.tab.c \
 	   input.c bashhist.c array.c arrayfunc.c sig.c pathexp.c \
 	   unwind_prot.c siglist.c bashline.c bracecomp.c error.c \
 	   list.c stringlib.c locale.c findcmd.c redir.c \
-	   pcomplete.c pcomplib.c syntax.c xmalloc.c
+	   pcomplete.c pcomplib.c syntax.c xmalloc.c vyatta-restricted.c
 
 HSOURCES = shell.h flags.h trap.h hashcmd.h hashlib.h jobs.h builtins.h \
 	   general.h variables.h config.h $(ALLOC_HEADERS) alias.h \
@@ -408,6 +408,7 @@ HSOURCES = shell.h flags.h trap.h hashcmd.h hashlib.h jobs.h builtins.h \
 	   subst.h externs.h siglist.h bashhist.h bashline.h bashtypes.h \
 	   array.h arrayfunc.h sig.h mailcheck.h bashintl.h bashjmp.h \
 	   execute_cmd.h parser.h pathexp.h pathnames.h pcomplete.h \
+	   vyatta-restricted.h \
 	   $(BASHINCFILES)
 
 SOURCES	 = $(CSOURCES) $(HSOURCES) $(BUILTIN_DEFS)
@@ -426,7 +427,7 @@ OBJECTS	 = shell.o eval.o y.tab.o general.o make_cmd.o print_cmd.o $(GLOBO) \
 	   trap.o input.o unwind_prot.o pathexp.o sig.o test.o version.o \
 	   alias.o array.o arrayfunc.o braces.o bracecomp.o bashhist.o \
 	   bashline.o $(SIGLIST_O) list.o stringlib.o locale.o findcmd.o redir.o \
-	   pcomplete.o pcomplib.o syntax.o xmalloc.o
+	   pcomplete.o pcomplib.o syntax.o xmalloc.o vyatta-restricted.o
 
 # Where the source code of the shell builtins resides.
 BUILTIN_SRCDIR=$(srcdir)/builtins
@@ -834,6 +835,7 @@ eval.o: general.h xmalloc.h bashtypes.h variables.h arrayfunc.h conftypes.h arra
 eval.o: quit.h ${BASHINCDIR}/maxpath.h unwind_prot.h dispose_cmd.h
 eval.o: make_cmd.h subst.h sig.h pathnames.h externs.h
 eval.o: input.h execute_cmd.h 
+eval.o: vyatta-restricted.h
 execute_cmd.o: config.h bashtypes.h ${BASHINCDIR}/filecntl.h ${BASHINCDIR}/posixstat.h bashansi.h ${BASHINCDIR}/ansi_stdlib.h
 execute_cmd.o: shell.h syntax.h config.h bashjmp.h ${BASHINCDIR}/posixjmp.h command.h ${BASHINCDIR}/stdc.h error.h
 execute_cmd.o: general.h xmalloc.h bashtypes.h variables.h arrayfunc.h conftypes.h array.h hashlib.h
@@ -934,6 +936,7 @@ shell.o: make_cmd.h subst.h sig.h pathnames.h externs.h
 shell.o: flags.h trap.h mailcheck.h builtins.h $(DEFSRC)/common.h
 shell.o: jobs.h siglist.h input.h execute_cmd.h findcmd.h bashhist.h
 shell.o: ${GLOB_LIBSRC}/strmatch.h ${BASHINCDIR}/posixtime.h
+shell.o: vyatta-restricted.h
 sig.o: config.h bashtypes.h
 sig.o: shell.h syntax.h config.h bashjmp.h ${BASHINCDIR}/posixjmp.h command.h ${BASHINCDIR}/stdc.h error.h
 sig.o: general.h xmalloc.h bashtypes.h variables.h arrayfunc.h conftypes.h array.h hashlib.h
@@ -983,6 +986,7 @@ variables.o: pcomplete.h  ${BASHINCDIR}/chartypes.h
 variables.o: ${BASHINCDIR}/posixtime.h
 version.o:  conftypes.h patchlevel.h version.h
 xmalloc.o: config.h bashtypes.h ${BASHINCDIR}/ansi_stdlib.h error.h
+vyatta-restricted.o: shell.h command.h vyatta-restricted.h
 
 # job control
 
@@ -1036,6 +1040,7 @@ pcomplete.o: ${BASHINCDIR}/stdc.h hashlib.h pcomplete.h shell.h syntax.h
 pcomplete.o: bashjmp.h command.h general.h xmalloc.h error.h variables.h arrayfunc.h conftypes.h quit.h
 pcomplete.o: unwind_prot.h dispose_cmd.h make_cmd.h subst.h sig.h pathnames.h
 pcomplete.o: externs.h ${BASHINCDIR}/maxpath.h execute_cmd.h 
+pcomplete.o: vyatta-restricted.h
 
 # library support files
 
@@ -1055,6 +1060,7 @@ bashline.o: make_cmd.h subst.h sig.h pathnames.h externs.h
 bashline.o: builtins.h bashhist.h bashline.h execute_cmd.h findcmd.h pathexp.h
 bashline.o: $(DEFSRC)/common.h $(GLOB_LIBSRC)/glob.h alias.h
 bashline.o: pcomplete.h ${BASHINCDIR}/chartypes.h input.h
+bashline.o: vyatta-restricted.h
 bracecomp.o: config.h bashansi.h ${BASHINCDIR}/ansi_stdlib.h
 bracecomp.o: shell.h syntax.h config.h bashjmp.h ${BASHINCDIR}/posixjmp.h command.h ${BASHINCDIR}/stdc.h error.h
 bracecomp.o: general.h xmalloc.h bashtypes.h variables.h arrayfunc.h conftypes.h array.h hashlib.h
