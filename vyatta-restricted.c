@@ -452,38 +452,6 @@ init_vyatta_restricted_mode()
   set_allowed_cfg_cmds();
   set_allowed_pipe_cmds();
 
-  if (0) {
-    int i = 0;
-    printf("\nlevel_dir={%s}\n", vyatta_user_level_dir);
-    printf("default output=%d full=%d\n", vyatta_default_output_restricted,
-           vyatta_default_full_restricted);
-    printf("op:\n");
-    if (allowed_op_cmds) {
-      for (i = 0; allowed_op_cmds[i]; i++) {
-        printf("  %d: {%s}\n", i, allowed_op_cmds[i]);
-      }
-    } else {
-      printf("  <unlimited>\n");
-    }
-    printf("cfg:\n");
-    if (allowed_cfg_cmds) {
-      for (i = 0; allowed_cfg_cmds[i]; i++) {
-        printf("  %d: {%s}\n", i, allowed_cfg_cmds[i]);
-      }
-    } else {
-      printf("  <unlimited>\n");
-    }
-    printf("pipe:\n");
-    if (allowed_pipe_cmds) {
-      for (i = 0; allowed_pipe_cmds[i]; i++) {
-        printf("  %d: {%s}(%d)\n", i, allowed_pipe_cmds[i], pipe_cmd_args[i]);
-      }
-    } else {
-      printf("  <unlimited>\n");
-    }
-    printf("\n");
-  }
-  
   return 1;
 }
 
