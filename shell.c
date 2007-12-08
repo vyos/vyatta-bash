@@ -528,9 +528,6 @@ main (argc, argv, env)
   if (shopt_alist)
     run_shopt_alist ();
 
-  /* check and set the default vyatta restricted mode */
-  set_vyatta_restricted_mode ();
-
   /* From here on in, the shell must be a normal functioning shell.
      Variables from the environment are expected to be set, etc. */
   shell_initialize ();

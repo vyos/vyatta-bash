@@ -19,23 +19,13 @@
    This code was originally developed by Vyatta, Inc.
    Portions created by Vyatta are Copyright (C) 2007 Vyatta, Inc. */
 
-#include "command.h"
-
 #if !defined(_VYATTA_RESTRICTED_H_)
 #define _VYATTA_RESTRICTED_H_
 
-#if defined(HAVE_UNISTD_H)
-#  include <unistd.h>
-#endif
+#include <stdio.h>
 
-#include <pwd.h>
-#include <dirent.h>
+#include "command.h"
 
-#if defined(HAVE_GRP_H)
-#  include <grp.h>
-#endif
-
-extern void set_vyatta_restricted_mode __P((void));
 enum vyatta_restricted_type { OUTPUT, FULL };
 extern int in_vyatta_restricted_mode __P((enum vyatta_restricted_type));
 extern int is_vyatta_command __P((char *, COMMAND *));

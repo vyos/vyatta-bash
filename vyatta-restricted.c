@@ -22,6 +22,25 @@
 #include "shell.h"
 #include "vyatta-restricted.h"
 
+#define FILENAME_MODE "restricted-mode"
+#define FILENAME_OP "allowed-op"
+#define FILENAME_CFG "allowed-cfg"
+#define FILENAME_PIPE "allowed-pipe"
+
+static char *prev_cmdline = NULL;
+
+/* allowed commands lists */
+static char **allowed_op_cmds = NULL;
+static char **allowed_cfg_cmds = NULL;
+static char **allowed_pipe_cmds = NULL;
+static int *pipe_cmd_args = NULL;
+
+static char *vyatta_user_level_dir = NULL;
+
+/* default restricted mode */
+static int vyatta_default_output_restricted = 0;
+static int vyatta_default_full_restricted = 0;
+
 static int
 is_in_command_list(const char *cmd, char *cmds[])
 {
@@ -37,12 +56,20 @@ is_in_command_list(const char *cmd, char *cmds[])
 static int
 is_vyatta_restricted_pipe_command(WORD_LIST *words)
 {
-  char *allowed_commands[] = { "more", NULL };
+  WORD_LIST *w = words;
+  int count = 1;
+  while (w = w->next) {
+    count++;
+  }
   if (words) {
-    if (!words->next) {
-      /* only 1 word */
-      if (is_in_command_list(words->word->word, allowed_commands)) {
-        /* allowed */
+    int i = 0;
+    if (!allowed_pipe_cmds) {
+      /* no restriction */
+      return 1;
+    }
+    for (i = 0; allowed_pipe_cmds[i]; i++) {
+      if (strcmp(words->word->word, allowed_pipe_cmds[i]) == 0
+          && count == pipe_cmd_args[i]) {
         return 1;
       }
     }
@@ -148,48 +175,22 @@ is_vyatta_restricted_command(COMMAND *cmd)
 static int
 is_vyatta_cfg_command(const char *cmd)
 {
-  char *valid_commands[] = { "set", "delete", "commit", "save", "load",
-                             "show", "exit", "edit", "run", NULL };
-  return is_in_command_list(cmd, valid_commands);
+  if (!allowed_cfg_cmds) {
+    /* no restriction */
+    return 1;
+  }
+  return is_in_command_list(cmd, allowed_cfg_cmds);
 }
 
 static int
 is_vyatta_op_command(const char *cmd)
 {
-  char *dir = getenv("vyatta_op_templates");
-  DIR *dp = NULL;
-  struct dirent *dent = NULL;
-  char *restrict_exclude_commands[]
-    = { "clear", "configure", "init-floppy", "install-system", "no",
-        "reboot", "set", "telnet", NULL };
-  char *other_commands[] = { "exit", NULL };
-  int ret = 0;
-
-  if (dir == NULL || (dp = opendir(dir)) == NULL) {
-    return 0;
+  if (!allowed_op_cmds) {
+    /* no restriction */
+    return 1;
   }
-
-  /* FIXME this assumes FULL == "users" */
-  if (in_vyatta_restricted_mode(FULL)
-      && is_in_command_list(cmd, restrict_exclude_commands)) {
-    /* command not allowed in "full" restricted mode */
-    return 0;
-  }
-
-  while (dent = readdir(dp)) {
-    if (strncmp(dent->d_name, ".", 1) == 0) {
-      continue;
-    }
-    if (strcmp(dent->d_name, cmd) == 0) {
-      ret = 1;
-      break;
-    }
-  }
-  closedir(dp);
-  return (ret) ? 1 : is_in_command_list(cmd, other_commands);
+  return is_in_command_list(cmd, allowed_op_cmds);
 }
-
-static char *prev_cmdline = NULL;
 
 int
 is_vyatta_command(char *cmdline, COMMAND *cmd)
@@ -243,90 +244,264 @@ is_vyatta_command(char *cmdline, COMMAND *cmd)
   return ret;
 }
 
-static int
-vyatta_user_in_group(uid_t ruid, char *grp_name)
+static FILE *
+fopen_level_file(char *file_name)
 {
-  int ret = 0;
-  struct passwd pw;
-  struct passwd *pwp = NULL;
-  struct group grp;
-  struct group *grpp = NULL;
-  char *pbuf = NULL, *gbuf = NULL;
-  long psize = 0, gsize = 0;
-
-  if (!grp_name) {
-    return 0;
+  FILE *f = NULL;
+#define BUF_SIZE 1024
+  char *buf = (char *) xmalloc(BUF_SIZE);
+  if (!buf) {
+    return NULL;
   }
 
   do {
-    psize = sysconf(_SC_GETPW_R_SIZE_MAX);
-    pbuf = (char *) xmalloc(psize);
-    if (!pbuf) {
+    int r = snprintf(buf, BUF_SIZE, "%s/%s", vyatta_user_level_dir, file_name);
+    if (r >= BUF_SIZE) {
       break;
     }
 
-    gsize = sysconf(_SC_GETGR_R_SIZE_MAX);
-    gbuf = (char *) xmalloc(gsize);
-    if (!gbuf) {
-      break;
-    }
-
-    ret = getpwuid_r(ruid, &pw, pbuf, psize, &pwp);
-    if (!pwp) {
-      break;
-    }
-
-    ret = getgrnam_r(grp_name, &grp, gbuf, gsize, &grpp);
-    if (!grpp) {
-      break;
-    }
-
-    {
-      int i = 0;
-      for (i = 0; grp.gr_mem[i]; i++) {
-        if (strcmp(pw.pw_name, grp.gr_mem[i]) == 0) {
-          ret = 1;
-          break;
-        }
-      }
-    }
+    f = fopen(buf, "r");
   } while (0);
 
-  if (pbuf) {
-    free(pbuf);
-  }
-  if (gbuf) {
-    free(gbuf);
-  }
-  return ret;
+  free(buf);
+  return f;
 }
 
-static int vyatta_default_output_restricted = 0;
-static int vyatta_default_full_restricted = 0;
-
-#define VYATTA_OUTPUT_RESTRICTED_GROUP "vyattacfg"
-
-void
-set_vyatta_restricted_mode()
+static char *
+fgets_level_file(char *buf, int size, FILE *lfile)
 {
-  uid_t ruid = getuid();
-  if (vyatta_user_in_group(ruid, VYATTA_OUTPUT_RESTRICTED_GROUP)) {
-    vyatta_default_output_restricted = 1;
-    vyatta_default_full_restricted = 0;
+  if (fgets(buf, size, lfile)) {
+    int end = 0;
+    while (buf[end] && isprint(buf[end]) && !isspace(buf[end])) {
+      end++;
+    }
+    buf[end] = 0;
+    return buf;
   } else {
-    /* if not in the output restricted group, default to full */
-    vyatta_default_output_restricted = 0;
-    vyatta_default_full_restricted = 1;
+    return NULL;
   }
+}
+
+static void
+set_default_mode()
+{
+  FILE *lfile = NULL;
+  char *line = NULL;
+  char buf[256];
+
+  /* default to full restricted */
+  vyatta_default_output_restricted = 0;
+  vyatta_default_full_restricted = 1;
+
+  if (!(lfile = fopen_level_file(FILENAME_MODE))) {
+    return;
+  }
+  while (line = fgets_level_file(buf, 256, lfile)) {
+    if (strcmp(line, "output") == 0) {
+      vyatta_default_output_restricted = 1;
+      vyatta_default_full_restricted = 0;
+      break;
+    }
+    if (strcmp(line, "full") == 0) {
+      vyatta_default_output_restricted = 0;
+      vyatta_default_full_restricted = 1;
+      break;
+    }
+  }
+  fclose(lfile);
+  return;
+}
+
+static void
+set_allowed_op_cmds()
+{
+  FILE *lfile = NULL;
+  char *line = NULL;
+  char buf[256];
+  int count = 1;
+
+  if (allowed_op_cmds) {
+    return;
+  }
+
+  if (!(lfile = fopen_level_file(FILENAME_OP))) {
+    return;
+  }
+  while (line = fgets_level_file(buf, 256, lfile)) {
+    count++;
+  }
+  fclose(lfile);
+
+  /* count is 1 more than number of lines */
+  allowed_op_cmds = (char **) xmalloc(sizeof(char *) * count);
+  memset(allowed_op_cmds, 0, sizeof(char *) * count);
+
+  if (!(lfile = fopen_level_file(FILENAME_OP))) {
+    return;
+  }
+  count = 0;
+  while (line = fgets_level_file(buf, 256, lfile)) {
+    allowed_op_cmds[count] = strdup(line);
+    count++;
+  }
+  fclose(lfile);
+  return;
+}
+
+static void
+set_allowed_cfg_cmds()
+{
+  FILE *lfile = NULL;
+  char *line = NULL;
+  char buf[256];
+  int count = 1;
+
+  if (allowed_cfg_cmds) {
+    return;
+  }
+
+  if (!(lfile = fopen_level_file(FILENAME_CFG))) {
+    return;
+  }
+  while (line = fgets_level_file(buf, 256, lfile)) {
+    count++;
+  }
+  fclose(lfile);
+
+  /* count is 1 more than number of lines */
+  allowed_cfg_cmds = (char **) xmalloc(sizeof(char *) * count);
+  memset(allowed_cfg_cmds, 0, sizeof(char *) * count);
+
+  if (!(lfile = fopen_level_file(FILENAME_CFG))) {
+    return;
+  }
+  count = 0;
+  while (line = fgets_level_file(buf, 256, lfile)) {
+    allowed_cfg_cmds[count] = strdup(line);
+    count++;
+  }
+  fclose(lfile);
+  return;
+}
+
+static void
+set_allowed_pipe_cmds()
+{
+  FILE *lfile = NULL;
+  char *line = NULL;
+  char buf[256];
+  int count = 0;
+
+  if (allowed_pipe_cmds) {
+    return;
+  }
+
+  if (!(lfile = fopen_level_file(FILENAME_PIPE))) {
+    return;
+  }
+  while (line = fgets_level_file(buf, 256, lfile)) {
+    count++;
+  }
+  fclose(lfile);
+
+  count = (count / 2) + 2;
+  /* count is 1 more than entries */
+  allowed_pipe_cmds = (char **) xmalloc(sizeof(char *) * count);
+  memset(allowed_pipe_cmds, 0, sizeof(char *) * count);
+  pipe_cmd_args = (int *) xmalloc(sizeof(int *) * count);
+  memset(pipe_cmd_args, 0, sizeof(int *) * count);
+
+  if (!(lfile = fopen_level_file(FILENAME_PIPE))) {
+    return;
+  }
+  count = 0;
+  while (line = fgets_level_file(buf, 256, lfile)) {
+    allowed_pipe_cmds[count] = strdup(line);
+    if (!(line = fgets_level_file(buf, 256, lfile))) {
+      free(allowed_pipe_cmds[count]);
+      allowed_pipe_cmds[count] = NULL;
+      break;
+    }
+    pipe_cmd_args[count] = atoi(line);
+    /* limit to between 1 and 256 */
+    if (pipe_cmd_args[count] < 1 || pipe_cmd_args[count] > 256) {
+      free(allowed_pipe_cmds[count]);
+      allowed_pipe_cmds[count] = NULL;
+      pipe_cmd_args[count] = 0;
+      break;
+    }
+    count++;
+  }
+  fclose(lfile);
+  return;
+}
+
+static int
+init_vyatta_restricted_mode()
+{
+  if (!(vyatta_user_level_dir = getenv("VYATTA_USER_LEVEL_DIR"))) {
+    /* level dir not set, return failure */
+    return 0;
+  }
+
+  /* set the default restricted mode based on level */
+  set_default_mode();
+
+  /* set the allowed commands */
+  set_allowed_op_cmds();
+  set_allowed_cfg_cmds();
+  set_allowed_pipe_cmds();
+
+  if (0) {
+    int i = 0;
+    printf("\nlevel_dir={%s}\n", vyatta_user_level_dir);
+    printf("default output=%d full=%d\n", vyatta_default_output_restricted,
+           vyatta_default_full_restricted);
+    printf("op:\n");
+    if (allowed_op_cmds) {
+      for (i = 0; allowed_op_cmds[i]; i++) {
+        printf("  %d: {%s}\n", i, allowed_op_cmds[i]);
+      }
+    } else {
+      printf("  <unlimited>\n");
+    }
+    printf("cfg:\n");
+    if (allowed_cfg_cmds) {
+      for (i = 0; allowed_cfg_cmds[i]; i++) {
+        printf("  %d: {%s}\n", i, allowed_cfg_cmds[i]);
+      }
+    } else {
+      printf("  <unlimited>\n");
+    }
+    printf("pipe:\n");
+    if (allowed_pipe_cmds) {
+      for (i = 0; allowed_pipe_cmds[i]; i++) {
+        printf("  %d: {%s}(%d)\n", i, allowed_pipe_cmds[i], pipe_cmd_args[i]);
+      }
+    } else {
+      printf("  <unlimited>\n");
+    }
+    printf("\n");
+  }
+  
+  return 1;
 }
 
 int
 in_vyatta_restricted_mode(enum vyatta_restricted_type type)
 {
   char *rval = getenv("VYATTA_RESTRICTED_MODE");
-  int output = vyatta_default_output_restricted;
-  int full = vyatta_default_full_restricted;
+  int output = 0;
+  int full = 0;
 
+  if (!vyatta_user_level_dir && !init_vyatta_restricted_mode()) {
+    /* init failed, return false (not restricted) */
+    return 0;
+  }
+
+  output = vyatta_default_output_restricted;
+  full = vyatta_default_full_restricted;
+  
   /* environment var overrides default */
   if (rval) {
     output = (strcmp(rval, "output") == 0);
