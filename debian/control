@@ -1,6 +1,6 @@
 Source: vyatta-bash
 Section: base
-Priority: required
+Priority: optional
 Maintainer: An-Cheng Huang <ancheng@vyatta.com>
 Standards-Version: 3.6.2
 Build-Depends: autoconf, patch, bison, libncurses5-dev, texinfo, autotools-dev, debhelper (>= 4.1), texi2html, locales
@@ -11,7 +11,7 @@ Architecture: any
 Pre-Depends: ${shlibs:Pre-Depends}
 Depends: base-files (>= 2.1.12), debianutils (>= 2.15), bash (>= 3.1)
 Section: shells
-Priority: required
+Priority: optional
 Description: The Vyatta Shell based on GNU bash
  The Vyatta Shell based on GNU Bourne Again SHell.
  .
