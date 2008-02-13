@@ -223,6 +223,8 @@ parse_command ()
 	send_pwd_to_eterm ();	/* Yuck */
     }
 
+  vyatta_reset_hist_expansion();
+
   current_command_line_count = 0;
   r = yyparse ();
 
@@ -236,6 +238,8 @@ parse_command ()
       current_readline_line[1] = '\0';
       return 1;
     }
+  } else if (interactive && current_readline_line) {
+    vyatta_check_expansion(global_command);
   }
 #endif
 

@@ -20,6 +20,7 @@
    Portions created by Vyatta are Copyright (C) 2007 Vyatta, Inc. */
 
 #include "shell.h"
+#include "bashhist.h"
 #include "vyatta-restricted.h"
 
 #define FILENAME_MODE "restricted-mode"
@@ -40,6 +41,28 @@ static char *vyatta_user_level_dir = NULL;
 /* default restricted mode */
 static int vyatta_default_output_restricted = 0;
 static int vyatta_default_full_restricted = 0;
+
+static int
+is_expansion_disabled()
+{
+  char *exp = getenv("VYATTA_ENABLE_SHELL_EXPANSION");
+  if (!exp) {
+    return 1;
+  }
+  return 0;
+}
+
+void
+vyatta_reset_hist_expansion()
+{
+#if defined (BANG_HISTORY)
+  if (is_expansion_disabled()) {
+    history_expansion_inhibited = 1;
+  } else {
+    history_expansion_inhibited = 0;
+  }
+#endif
+}
 
 static int
 is_in_command_list(const char *cmd, char *cmds[])
@@ -123,6 +146,46 @@ make_restricted_wordlist(WORD_LIST *words)
   WORD_LIST *l = words->next; /* skip the first word */
   for (; l; l = l->next) {
     make_restricted_word(l->word);
+  }
+}
+
+/* this basically disables shell expansions for "simple" commands */
+void
+vyatta_check_expansion(COMMAND *cmd)
+{
+  struct simple_com *cS;
+  struct connection *cC;
+
+  if (!cmd) {
+    return;
+  }
+  if (!is_expansion_disabled()) {
+    /* enabled */
+    return;
+  }
+
+  switch (cmd->type) {
+  case cm_simple:
+    cS = cmd->value.Simple;
+    if (!(cS->redirects)) {
+      /* simple command, no redirects */
+      /* quote all words */
+      make_restricted_wordlist(cS->words);
+    }
+    break;
+  case cm_connection:
+    cC = cmd->value.Connection;
+    if ((cC->connector == '|') && (cC->first->type == cm_simple)) {
+      struct simple_com *cS1 = cC->first->value.Simple;
+      if (!(cS1->redirects)) {
+        /* simple, no redirects */
+        /* quote all words */
+        make_restricted_wordlist(cS1->words);
+      }
+    }
+    break;
+  default:
+    break;
   }
 }
 

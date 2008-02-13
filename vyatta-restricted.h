@@ -29,6 +29,8 @@
 enum vyatta_restricted_type { OUTPUT, FULL };
 extern int in_vyatta_restricted_mode __P((enum vyatta_restricted_type));
 extern int is_vyatta_command __P((char *, COMMAND *));
+extern void vyatta_check_expansion __P((COMMAND *));
+extern void vyatta_reset_hist_expansion();
 
 #endif /* _VYATTA_RESTRICTED_H_ */
 
