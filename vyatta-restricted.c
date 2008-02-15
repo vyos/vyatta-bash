@@ -42,6 +42,12 @@ static char *vyatta_user_level_dir = NULL;
 static int vyatta_default_output_restricted = 0;
 static int vyatta_default_full_restricted = 0;
 
+static char *expand_disable_cmds[] = { "_vyatta_op_run",
+                                       "/opt/vyatta/sbin/my_set",
+                                       "/opt/vyatta/sbin/my_delete",
+                                       "/opt/vyatta/sbin/my_commit",
+                                       NULL };
+
 static int
 is_expansion_disabled()
 {
@@ -149,9 +155,10 @@ make_restricted_wordlist(WORD_LIST *words)
   }
 }
 
-/* this basically disables shell expansions for "simple" commands */
+/* this basically disables shell expansions for "simple" commands. */
+/* full: do a "full" check (disallow env override && also check pipe). */
 void
-vyatta_check_expansion(COMMAND *cmd)
+vyatta_check_expansion(COMMAND *cmd, int full)
 {
   struct simple_com *cS;
   struct connection *cC;
@@ -159,18 +166,20 @@ vyatta_check_expansion(COMMAND *cmd)
   if (!cmd) {
     return;
   }
-  if (!is_expansion_disabled()) {
+  if (!full && !is_expansion_disabled()) {
     /* enabled */
     return;
   }
-
+ 
   switch (cmd->type) {
   case cm_simple:
     cS = cmd->value.Simple;
     if (!(cS->redirects)) {
       /* simple command, no redirects */
-      /* quote all words */
-      make_restricted_wordlist(cS->words);
+      if (is_in_command_list(cS->words->word->word, expand_disable_cmds)) {
+        /* user command => quote all words */
+        make_restricted_wordlist(cS->words);
+      }
     }
     break;
   case cm_connection:
@@ -179,8 +188,18 @@ vyatta_check_expansion(COMMAND *cmd)
       struct simple_com *cS1 = cC->first->value.Simple;
       if (!(cS1->redirects)) {
         /* simple, no redirects */
-        /* quote all words */
-        make_restricted_wordlist(cS1->words);
+        if (is_in_command_list(cS1->words->word->word, expand_disable_cmds)) {
+          /* user command => quote all words */
+          make_restricted_wordlist(cS1->words);
+        }
+      }
+      if (full && (cC->second->type == cm_simple)) {
+        struct simple_com *cS2 = cC->second->value.Simple;
+        if (!(cS2->redirects)) {
+          /* simple, no redirects */
+          /* quote all words (not checking user command after pipe) */
+          make_restricted_wordlist(cS2->words);
+        }
       }
     }
     break;
@@ -204,8 +223,6 @@ is_vyatta_restricted_command(COMMAND *cmd)
     cS = cmd->value.Simple;
     if (!(cS->redirects)) {
       /* simple command, no redirects */
-      /* make sure the words are allowed */
-      make_restricted_wordlist(cS->words);
       return 1;
     }
     break;
@@ -217,9 +234,6 @@ is_vyatta_restricted_command(COMMAND *cmd)
         struct simple_com *cS2 = cC->second->value.Simple;
         if (!(cS1->redirects) && !(cS2->redirects)) {
           /* both are simple and no redirects */
-          /* make sure the words are allowed */
-          make_restricted_wordlist(cS1->words);
-          make_restricted_wordlist(cS2->words);
           if (is_vyatta_restricted_pipe_command(cS2->words)) {
             /* pipe command is allowed => allowed */
             return 1;
@@ -264,6 +278,9 @@ is_vyatta_command(char *cmdline, COMMAND *cmd)
   char *end = NULL;
   char save = 0;
   int ret = 0;
+
+  /* check expansions (full) */
+  vyatta_check_expansion(cmd, 1);
 
   if (!prev_cmdline) {
     prev_cmdline = strdup("");

@@ -239,7 +239,7 @@ parse_command ()
       return 1;
     }
   } else if (interactive && current_readline_line) {
-    vyatta_check_expansion(global_command);
+    vyatta_check_expansion(global_command, 0);
   }
 #endif
 
