@@ -1,3 +1,9 @@
+vyatta-bash (3.1dfsg-8-vyatta-1) unstable; urgency=low
+  
+  reset version #
+
+ -- Rick Balocc <rbalocca@vyatta.com>  Fri, 14 Feb 2008 12:18:00 -0700
+
 vyatta-bash (0.1) unstable; urgency=low
   
   * Initial release based on bash 3.1dfsg-8.
