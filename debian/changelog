@@ -1,3 +1,21 @@
+vyatta-bash (3.1dfsg-8-vyatta-2) unstable; urgency=low
+
+  vc4.0.0
+  [ Mark O'Brien ]
+
+
+  [ An-Cheng Huang ]
+  * fix for bug 2604: shell accepts '!' by default
+  * fix for bug 2832: limit expansion checking to appropriate commands.
+
+  [ rbalocca ]
+  * Reset the version number to correspond to the version with which we
+    started
+
+  [ Mark O'Brien ]
+
+ -- Mark O'Brien <mobrien@vyatta.com>  Mon, 25 Feb 2008 17:37:54 -0800
+
 vyatta-bash (3.1dfsg-8-vyatta-1) unstable; urgency=low
   
   reset version #
