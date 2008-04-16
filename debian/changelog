@@ -1,3 +1,10 @@
+vyatta-bash (3.1dfsg-8-vyatta-5) unstable; urgency=low
+
+  VC4.0.2
+
+
+ -- Mark O'Brien <mobrien@vyatta.com>  Wed, 16 Apr 2008 09:49:46 -0700
+
 vyatta-bash (3.1dfsg-8-vyatta-4) unstable; urgency=low
 
   3.0.2
