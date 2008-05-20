@@ -7,4 +7,5 @@
 /debian/files
 /debian/vyatta-bash.substvars
 /debian/vyatta-bash
+/debian/vyatta-bash.debhelper.log
 /stamps
