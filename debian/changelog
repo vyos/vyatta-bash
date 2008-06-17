@@ -1,3 +1,16 @@
+vyatta-bash (3.1dfsg-8-vyatta-10) unstable; urgency=low
+
+	  3.1.0
+  [ Mark O'Brien ]
+
+
+  [ rbalocca ]
+  * Ignore derived files
+
+  [ Mark O'Brien ]
+
+ -- Mark O'Brien <mobrien@firebolt.vyatta.com>  Tue, 17 Jun 2008 09:25:53 -0700
+
 vyatta-bash (3.1dfsg-8-vyatta-9) unstable; urgency=low
 
   3.0.5
