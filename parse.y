@@ -1871,6 +1871,10 @@ shell_getc (remove_quoted_newline)
   unsigned char uc;
   static int mustpop = 0;
 
+  char *history_buf = NULL;
+  int history_index = 0;
+  int history_start = 0;
+
   QUIT;
 
   if (sigwinch_received)
@@ -1934,6 +1938,7 @@ shell_getc (remove_quoted_newline)
       if (bash_input.type == st_stream)
 	clearerr (stdin);
 
+      int no_escape = 0;
       while (1)
 	{
 	  c = yy_getc ();
@@ -1963,6 +1968,44 @@ shell_getc (remove_quoted_newline)
 	      break;
 	    }
 
+
+
+	  //need to fix terminating special character ';'
+	  //vyatta
+	  if (interactive && 
+	      shell_input_line && 
+	      (
+	       strncmp(shell_input_line,"set ",4) == 0 ||
+	       strncmp(shell_input_line,"delete",4) == 0)) {
+	    if ((c == ';' ||
+		 c == '&' ||
+		 c == '(' ||
+		 c == ')' ||
+		 c == '>' ||
+		 c == '<' ||
+		 c == '$') &&
+		 shell_input_line[i-1] != '\\') {
+	      if (no_escape == 0) {
+		shell_input_line[i++] = '\\';
+		
+		history_buf = realloc(history_buf,i+1);
+		register int j;
+		for (j = history_start; j < i-1; ++j) {
+		  history_buf[history_index++] = shell_input_line[j];
+		}
+		history_start = i;
+	      }
+	    }
+	    else if (c == '"') {
+	      //this suppresses a quoted string
+	      if (no_escape == 1) {
+		no_escape = 0;
+	      }
+	      else {
+		no_escape = 1;
+	      }
+	    }
+	  }
 	  shell_input_line[i++] = c;
 
 	  if (c == '\n')
@@ -1992,7 +2035,22 @@ shell_getc (remove_quoted_newline)
 	  if (current_delimiter (dstack) == '\'')
 	    history_expansion_inhibited = 1;
 #  endif
-	  expansions = pre_process_line (shell_input_line, 1, 1);
+	  //vyatta
+	  int flag = 0;
+	  if (history_index > 0) {
+	    history_buf = realloc(history_buf,i+1);
+	    register int j;
+	    for (j = history_start; j < i; ++j) {
+	      history_buf[history_index++] = shell_input_line[j];
+	    }
+	    history_buf[history_index] = '\0';
+	    expansions = pre_process_line (history_buf, 1, 1);
+	    flag = expansions != history_buf;
+	  }
+	  else {
+	    expansions = pre_process_line (shell_input_line, 1, 1);
+	    flag = expansions != shell_input_line;
+	  }
 #  if defined (BANG_HISTORY)
 	  history_expansion_inhibited = old_hist;
 #  endif
