@@ -2046,8 +2046,6 @@ shell_getc (remove_quoted_newline)
 	    history_buf[history_index] = '\0';
 	    expansions = pre_process_line (history_buf, 1, 1);
 	    flag = expansions != history_buf;
-
-	    free(history_buf);
 	  }
 	  else {
 	    expansions = pre_process_line (shell_input_line, 1, 1);
