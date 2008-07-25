@@ -1983,6 +1983,8 @@ shell_getc (remove_quoted_newline)
 		 c == ')' ||
 		 c == '>' ||
 		 c == '<' ||
+		 c == '|' ||
+		 c == '`' ||
 		 c == '$') &&
 		 shell_input_line[i-1] != '\\') {
 	      if (no_escape == 0) {
@@ -2046,6 +2048,7 @@ shell_getc (remove_quoted_newline)
 	    history_buf[history_index] = '\0';
 	    expansions = pre_process_line (history_buf, 1, 1);
 	    flag = expansions != history_buf;
+	    free(history_buf);
 	  }
 	  else {
 	    expansions = pre_process_line (shell_input_line, 1, 1);
@@ -2054,7 +2057,7 @@ shell_getc (remove_quoted_newline)
 #  if defined (BANG_HISTORY)
 	  history_expansion_inhibited = old_hist;
 #  endif
-	  if (expansions != shell_input_line)
+	  if (flag)
 	    {
 	      free (shell_input_line);
 	      shell_input_line = expansions;
