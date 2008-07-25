@@ -1973,29 +1973,38 @@ shell_getc (remove_quoted_newline)
 	  //need to fix terminating special character ';'
 	  //vyatta
 	  if (interactive && 
-	      shell_input_line && 
-	      (
-	       strncmp(shell_input_line,"set ",4) == 0 ||
-	       strncmp(shell_input_line,"delete",4) == 0)) {
-	    if ((c == ';' ||
-		 c == '&' ||
-		 c == '(' ||
-		 c == ')' ||
-		 c == '>' ||
-		 c == '<' ||
-		 c == '|' ||
-		 c == '`' ||
-		 c == '$') &&
-		 shell_input_line[i-1] != '\\') {
-	      if (no_escape == 0) {
-		shell_input_line[i++] = '\\';
-		
-		history_buf = realloc(history_buf,i+1);
-		register int j;
-		for (j = history_start; j < i-1; ++j) {
-		  history_buf[history_index++] = shell_input_line[j];
+	      shell_input_line) {
+
+	    char *string = shell_input_line;
+
+	    while (*string && (whitespace (*string) || *string == '\n'))
+	      string++;
+
+	    int pos = string - shell_input_line;
+
+	    //find where string starts (skipping whitespace)
+	    if (strncmp(&shell_input_line[pos],"set ",4) == 0 ||
+		strncmp(&shell_input_line[pos],"delete",4) == 0) {
+	      if ((c == ';' ||
+		   c == '&' ||
+		   c == '(' ||
+		   c == ')' ||
+		   c == '>' ||
+		   c == '<' ||
+		   c == '|' ||
+		   c == '`' ||
+		   c == '$') &&
+		  shell_input_line[i-1] != '\\') {
+		if (no_escape == 0) {
+		  shell_input_line[i++] = '\\';
+		  
+		  history_buf = realloc(history_buf,i+1);
+		  register int j;
+		  for (j = history_start; j < i-1; ++j) {
+		    history_buf[history_index++] = shell_input_line[j];
+		  }
+		  history_start = i;
 		}
-		history_start = i;
 	      }
 	    }
 	    else if (c == '"') {
