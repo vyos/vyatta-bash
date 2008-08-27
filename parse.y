@@ -1992,6 +1992,7 @@ shell_getc (remove_quoted_newline)
 		   c == '>' ||
 		   c == '<' ||
 		   c == '|' ||
+		   c == '!' ||
 		   c == '`' ||
 		   c == '$') &&
 		  shell_input_line[i-1] != '\\') {
