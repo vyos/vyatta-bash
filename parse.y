@@ -1984,18 +1984,27 @@ shell_getc (remove_quoted_newline)
 
 	    //find where string starts (skipping whitespace)
 	    if (strncmp(&shell_input_line[pos],"set ",4) == 0 ||
-		strncmp(&shell_input_line[pos],"delete",4) == 0) {
-	      if ((c == ';' ||
-		   c == '&' ||
-		   c == '(' ||
-		   c == ')' ||
-		   c == '>' ||
-		   c == '<' ||
-		   c == '|' ||
-		   c == '!' ||
-		   c == '`' ||
-		   c == '$') &&
-		  shell_input_line[i-1] != '\\') {
+		strncmp(&shell_input_line[pos],"delete ",7) == 0) {
+	      if (c == '"' || c == '\'') {
+		//this suppresses a quoted string
+		if (no_escape == 1) {
+		  no_escape = 0;
+		}
+		else {
+		  no_escape = 1;
+		}
+	      }
+	      else if ((c == ';' ||
+			c == '&' ||
+			c == '(' ||
+			c == ')' ||
+			c == '>' ||
+			c == '<' ||
+			c == '|' ||
+			c == '!' ||
+			c == '`' ||
+			c == '$') &&
+		       shell_input_line[i-1] != '\\') {
 		if (no_escape == 0) {
 		  shell_input_line[i++] = '\\';
 		  
@@ -2006,15 +2015,6 @@ shell_getc (remove_quoted_newline)
 		  }
 		  history_start = i;
 		}
-	      }
-	    }
-	    else if (c == '"') {
-	      //this suppresses a quoted string
-	      if (no_escape == 1) {
-		no_escape = 0;
-	      }
-	      else {
-		no_escape = 1;
 	      }
 	    }
 	  }
