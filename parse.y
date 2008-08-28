@@ -2001,9 +2001,7 @@ shell_getc (remove_quoted_newline)
 			c == '>' ||
 			c == '<' ||
 			c == '|' ||
-			c == '!' ||
-			c == '`' ||
-			c == '$') &&
+			c == '`') &&
 		       shell_input_line[i-1] != '\\') {
 		if (no_escape == 0) {
 		  shell_input_line[i++] = '\\';
