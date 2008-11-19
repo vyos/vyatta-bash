@@ -143,7 +143,11 @@ binary-bash: bash-install
 	dh_fixperms -p$(p)
 	dh_shlibdeps -p$(p) -- -dPre-Depends $(d)/bin/vbash
 	dh_installdeb -p$(p)
-	dh_gencontrol -p$(p)
+	if [ -f "../.VYATTA_DEV_BUILD" ]; then \
+		dh_gencontrol -p$(p) -- -v999.dev; \
+	else \
+		dh_gencontrol -p$(p); \
+	fi
 	dh_md5sums -p$(p)
 	dh_builddeb -p$(p)
 
