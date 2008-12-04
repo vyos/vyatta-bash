@@ -1,3 +1,35 @@
+vyatta-bash (3.1dfsg-8-vyatta-11) unstable; urgency=low
+
+	  3.2.0
+  [ Mark O'Brien ]
+
+
+  [ slioch ]
+  * remove ! and $ from vbash processing as these are handled by command
+    scripts.
+  * Handle double and single quote within a command argument. First
+    quote turns on automatic escaping, second turns off. Will support
+    unquoted, single quoted and
+  * disable shell interpretation of ![num] when entering configure
+    commands. this fixes a bug where the negation character in
+    nat/firewall/wlb
+
+  [ root ]
+  * skipping whitespace at beginning of command when matching
+    set|delete.
+  * additional special characters to trap, added back free() after
+    additional testing, removed generated files from project.
+  * Revert "missing a free from last merge."
+  * missing a free from last merge.
+  * fix for bug 1283. Or partial fix. Now handle and escape special
+    characters in vbash shell without requiring quotes on string. only
+    applies to set/delete commands in vbash shell. Behavior is now much
+    closer to juniper shell behavior with special characters.
+
+  [ Mark O'Brien ]
+
+ -- Mark O'Brien <mobrien@firebolt.vyatta.com>  Tue, 25 Nov 2008 19:08:33 -0800
+
 vyatta-bash (3.1dfsg-8-vyatta-10) unstable; urgency=low
 
 	  3.1.0
