@@ -131,6 +131,7 @@ stamps/stamp-install-bash: stamps/stamp-build-bash
 	touch stamps/stamp-install-bash
 
 binary-bash: bash-install
+	rm -f debian/files
 	dh_testdir
 	dh_testroot
 	dh_installchangelogs -p$(p) bash/CWRU/changelog
