@@ -1,7 +1,7 @@
 Source: vyatta-bash
 Section: base
 Priority: optional
-Maintainer: An-Cheng Huang <ancheng@vyatta.com>
+Maintainer: Vyatta Package Maintainers <maintainers@vyatta.com>
 Standards-Version: 3.6.2
 Build-Depends: autoconf, patch, bison, libncurses5-dev, texinfo, autotools-dev, debhelper (>= 4.1), texi2html, locales
 Build-Depends-Indep: tetex-bin
