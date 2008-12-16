@@ -1,3 +1,12 @@
+vyatta-bash (3.1dfsg-8-vyatta-12) unstable; urgency=low
+
+  Build system changes
+  * add support for development build
+  * update maintainer information
+  * "files" file should be removed before package build
+
+ -- An-Cheng Huang <ancheng@build-vm.localdomain>  Mon, 15 Dec 2008 16:07:17 -0800
+
 vyatta-bash (3.1dfsg-8-vyatta-11) unstable; urgency=low
 
 	  3.2.0
