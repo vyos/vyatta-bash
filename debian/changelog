@@ -1,3 +1,9 @@
+vyatta-bash (3.1dfsg-8-vyatta-13) unstable; urgency=low
+
+  * UNRELEASED
+
+ -- An-Cheng Huang <ancheng@vyatta.com>  Fri, 29 May 2009 18:34:45 -0700
+
 vyatta-bash (3.1dfsg-8-vyatta-12) unstable; urgency=low
 
   Build system changes
