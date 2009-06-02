@@ -174,9 +174,10 @@ vyatta_check_expansion(COMMAND *cmd, int full)
   switch (cmd->type) {
   case cm_simple:
     cS = cmd->value.Simple;
-    if (!(cS->redirects)) {
+    if (cS && !(cS->redirects)) {
       /* simple command, no redirects */
-      if (is_in_command_list(cS->words->word->word, expand_disable_cmds)) {
+      if (cS->words && cS->words->word && 
+	  is_in_command_list(cS->words->word->word, expand_disable_cmds)) {
         /* user command => quote all words */
         make_restricted_wordlist(cS->words);
       }
