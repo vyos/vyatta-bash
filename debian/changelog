@@ -1,3 +1,9 @@
+vyatta-bash (3.1dfsg-8-vyatta-15) unstable; urgency=low
+
+  * UNRELEASED
+
+ -- An-Cheng Huang <ancheng@vyatta.com>  Wed, 17 Feb 2010 16:12:28 -0800
+
 vyatta-bash (3.1dfsg-8-vyatta-14) unstable; urgency=low
 
   * Bugfix 4108: Check pointers before dereferencing them.
