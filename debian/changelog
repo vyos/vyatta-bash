@@ -1,3 +1,10 @@
+vyatta-bash (3.1dfsg-8-vyatta-16) unstable; urgency=low
+
+  * Update FSF address
+  * Add installation/removal scripts for vbash
+
+ -- Stephen Hemminger <stephen.hemminger@vyatta.com>  Wed, 10 Mar 2010 12:25:25 -0800
+
 vyatta-bash (3.1dfsg-8-vyatta-15) unstable; urgency=low
 
   * UNRELEASED
