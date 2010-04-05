@@ -45,6 +45,11 @@
 #  include "bashhist.h"
 #endif
 
+#if defined (AUDIT_SHELL)
+#  include <libaudit.h>
+#  include <errno.h>
+#endif
+
 extern int EOF_reached;
 extern int indirection_level;
 extern int posixly_correct;
@@ -61,6 +66,38 @@ static sighandler alrm_catcher __P((int));
 extern char *current_readline_line;
 extern int current_readline_line_index;
 #endif
+
+#if defined (AUDIT_SHELL)
+static int audit_fd = -1;
+
+static int
+audit_start ()
+{
+  audit_fd = audit_open ();
+  if (audit_fd < 0)
+    return -1;
+  else
+    return 0;
+}
+
+static int
+audit (cmd, result)
+        char *cmd;
+        int result;
+{
+  int rc;
+
+  if (audit_fd < 0)
+    return 0;
+
+  rc = audit_log_user_command (audit_fd, AUDIT_USER_CMD, cmd,
+                               NULL, !result);
+  close (audit_fd);
+  audit_fd = -1;
+  return rc;
+}
+#endif
+
 
 /* Read and execute commands until EOF is reached.  This assumes that
    the input source has already been initialized. */
@@ -149,7 +186,25 @@ reader_loop ()
 
 	      executing = 1;
 	      stdin_redir = 0;
+#if defined (AUDIT_SHELL)
+              if (audited && interactive_shell && getuid () == 0)
+                {
+                  if (audit_start () < 0)
+                    {
+                      if (errno != EINVAL && errno != EPROTONOSUPPORT &&
+                          errno != EAFNOSUPPORT)
+                        return EXECUTION_FAILURE;
+                    }
+                }
+#endif
+
 	      execute_command (current_command);
+#if defined (AUDIT_SHELL)
+              {
+                extern char *shell_input_line;
+                audit (shell_input_line, last_command_exit_value);
+              }
+#endif
 
 	    exec_done:
 	      QUIT;

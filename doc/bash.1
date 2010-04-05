@@ -154,6 +154,12 @@ single-character options to be recognized.
 .PP
 .PD 0
 .TP
+.B \-\-audit
+The shell logs all commands run by the root user (see
+.SM
+.B "AUDIT SHELL"
+below).
+.TP
 .B \-\-debugger
 Arrange for the debugger profile to be executed before the shell
 starts.
@@ -8796,6 +8802,17 @@ above),
 turns off any restrictions in the shell spawned to execute the
 script.
 .\" end of rbash.1
+.if \n(zY=1 .ig zY
+.SH "AUDIT SHELL"
+.zY
+.PP
+If
+.B bash
+is started with the name
+.BR aubash ,
+or the
+.B \-\-audit
+option is supplied at invocation, the shell logs all commands issued by the root user to the audit system.
 .if \n(zY=1 .ig zY
 .SH "SEE ALSO"
 .PD 0

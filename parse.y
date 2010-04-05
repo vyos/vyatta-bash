@@ -263,7 +263,7 @@ int need_here_doc;
 
 /* Where shell input comes from.  History expansion is performed on each
    line when the shell is interactive. */
-static char *shell_input_line = (char *)NULL;
+char *shell_input_line = (char *)NULL;
 static int shell_input_line_index;
 static int shell_input_line_size;	/* Amount allocated for shell_input_line. */
 static int shell_input_line_len;	/* strlen (shell_input_line) */

@@ -236,6 +236,9 @@ struct {
 #if defined (RESTRICTED_SHELL)
   { "restricted", Int, &restricted, (char **)0x0 },
 #endif
+#if defined (AUDIT_SHELL)
+  { "audit", Int, &audited, (char **)0x0 },
+#endif
   { "verbose", Int, &echo_input_at_read, (char **)0x0 },
   { "version", Int, &do_version, (char **)0x0 },
   { "wordexp", Int, &wordexp_only, (char **)0x0 },
@@ -632,6 +635,10 @@ main (argc, argv, env)
   if (shell_reinitialized == 0)
     maybe_make_restricted (shell_name);
 #endif /* RESTRICTED_SHELL */
+
+#if defined (AUDIT_SHELL)
+    maybe_make_audited (shell_name);
+#endif
 
   if (wordexp_only)
     {
@@ -1131,6 +1138,29 @@ maybe_make_restricted (name)
   return (restricted);
 }
 #endif /* RESTRICTED_SHELL */
+
+#if defined (AUDIT_SHELL)
+/* Perhaps make this shell an `audited' one, based on NAME.  If the
+   basename of NAME is "aubash", then this shell is audited.  The
+   name of the audited shell is a configurable option, see config.h.
+   In an audited shell, all actions performed by root will be logged
+   to the audit system.
+   Do this also if `audited' is already set to 1 maybe the shell was
+   started with --audit. */
+int
+maybe_make_audited (name)
+     char *name;
+{
+  char *temp;
+
+  temp = base_pathname (name);
+  if (*temp == '-')
+    temp++;
+  if (audited || (STREQ (temp, AUDIT_SHELL_NAME)))
+    audited = 1;
+  return (audited);
+}
+#endif /* AUDIT_SHELL */
 
 /* Fetch the current set of uids and gids and return 1 if we're running
    setuid or setgid. */

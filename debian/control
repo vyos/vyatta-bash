@@ -3,7 +3,8 @@ Section: base
 Priority: optional
 Maintainer: Vyatta Package Maintainers <maintainers@vyatta.com>
 Standards-Version: 3.6.2
-Build-Depends: autoconf, patch, bison, libncurses5-dev, texinfo, autotools-dev, debhelper (>= 4.1), texi2html, locales
+Build-Depends: autoconf, patch, bison, libncurses5-dev, texinfo, autotools-dev, 
+	       debhelper (>= 4.1), texi2html, locales, libaudit-dev
 Build-Depends-Indep: tetex-bin
 
 Package: vyatta-bash

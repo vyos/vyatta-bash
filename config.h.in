@@ -81,6 +81,11 @@
    flag. */
 #undef RESTRICTED_SHELL
 
+/* Define AUDIT_SHELL if you want the generated shell to audit all
+   actions performed by root account.  The shell thus generated can become
+   audited by being run with the name "aubash". */
+#undef AUDIT_SHELL
+
 /* Define DISABLED_BUILTINS if you want "builtin foo" to always run the
    shell builtin "foo", even if it has been disabled with "enable -n foo". */
 #undef DISABLED_BUILTINS

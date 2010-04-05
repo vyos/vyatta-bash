@@ -66,6 +66,10 @@ extern int restricted;
 extern int restricted_shell;
 #endif /* RESTRICTED_SHELL */
 
+#if defined (AUDIT_SHELL)
+extern int audited;
+#endif /* AUDIT_SHELL */
+
 extern int *find_flag __P((int));
 extern int change_flag __P((int, int));
 extern char *which_set_flags __P((void));
