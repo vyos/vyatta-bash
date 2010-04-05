@@ -116,7 +116,7 @@ A kind of FAQ for bash on Debian GNU/{Linux,Hurd}
    That vi command mode keys work fine, and I can use the arrow keys in vi
    mode, *provided I'm already in command mode already*.  In other words,
    bash is doing something wrong here such that it doesn't see the escape
-   character at the begining of the key sequence even when in vi insert mode.
+   character at the beginning of the key sequence even when in vi insert mode.
 
    Comment from the upstream author: "This guy destroyed the key binding for
    ESC, which effectively disabled vi command mode.  It's not as simple as he
