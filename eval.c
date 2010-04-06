@@ -187,7 +187,7 @@ reader_loop ()
 	      executing = 1;
 	      stdin_redir = 0;
 #if defined (AUDIT_SHELL)
-              if (audited && interactive_shell && getuid () == 0)
+              if (audited && interactive_shell)
                 {
                   if (audit_start () < 0)
                     {
