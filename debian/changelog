@@ -1,3 +1,13 @@
+vyatta-bash (3.1dfsg-8-vyatta-17) unstable; urgency=low
+
+  * Add auditing support to bash
+  * Fix spelling error warning
+  * Turn on auditing for Vyatta bash
+  * Package now depends on audit library
+  * Rerun autoreconf to regenerate configure
+
+ -- Stephen Hemminger <stephen.hemminger@vyatta.com>  Wed, 07 Apr 2010 11:01:05 -0700
+
 vyatta-bash (3.1dfsg-8-vyatta-16) unstable; urgency=low
 
   * Update FSF address
