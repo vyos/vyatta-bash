@@ -10,7 +10,9 @@ Build-Depends-Indep: tetex-bin
 Package: vyatta-bash
 Architecture: any
 Pre-Depends: ${shlibs:Pre-Depends}
-Depends: base-files (>= 2.1.12), debianutils (>= 2.15), bash (>= 3.1)
+Depends: base-files (>= 2.1.12), debianutils (>= 2.15),
+ bash (>= 3.1), libaudit0
+Suggests: auditd
 Section: shells
 Priority: optional
 Description: The Vyatta Shell based on GNU bash
