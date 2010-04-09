@@ -1141,7 +1141,7 @@ maybe_make_restricted (name)
 
 #if defined (AUDIT_SHELL)
 /* Perhaps make this shell an `audited' one, based on NAME.  If the
-   basename of NAME is "aubash", then this shell is audited.  The
+   basename of NAME is "vbash", then this shell is audited.  The
    name of the audited shell is a configurable option, see config.h.
    In an audited shell, all actions performed by root will be logged
    to the audit system.
