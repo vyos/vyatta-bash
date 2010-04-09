@@ -1,0 +1,53 @@
+#! /bin/sh -e
+
+if [ $# -eq 3 -a "$2" = '-d' ]; then
+    pdir="-d $3"
+elif [ $# -ne 1 ]; then
+    echo >&2 "`basename $0`: script expects -patch|-unpatch as argument"
+    exit 1
+fi
+case "$1" in
+    -patch) patch $pdir -f --no-backup-if-mismatch -p0 < $0;;
+    -unpatch) patch $pdir -f --no-backup-if-mismatch -R -p0 < $0;;
+    *)
+	echo >&2 "`basename $0`: script expects -patch|-unpatch as argument"
+	exit 1
+esac
+exit 0
+
+# DP: bash-3.2 upstream patch bash32-039 (documentation)
+
+			     BASH PATCH REPORT
+			     =================
+
+Bash-Release: 3.2
+Patch-ID: bash32-039
+
+Bug-Reported-by:	rew@erebor.com
+Bug-Reference-ID:	<20070119065603.546D011E9C@kansas.erebor.com>
+Bug-Reference-URL:	
+
+Bug-Description:
+
+Bash-3.2 changed the behavior of the [[ command's `=~' operator when the
+right-hand side was quoted:  it matched the quoted portions as strings.
+This patch introduces a new shell option: compat31.  When enabled, it
+restores the bash-3.1 behavior with respect to evaluating quoted arguments
+to the =~ operator.
+
+Patch:
+
+*** ../bash-20080214/doc/bashref.texi	2008-02-08 21:28:35.000000000 -0500
+--- doc/bashref.texi	2008-02-22 21:44:51.000000000 -0500
+***************
+*** 4053,4056 ****
+--- 4061,4069 ----
+  easy re-editing of multi-line commands.
+  
++ @item compat31
++ If set, Bash
++ changes its behavior to that of version 3.1 with respect to quoted
++ arguments to the conditional command's =~ operator.
++ 
+  @item dotglob
+  If set, Bash includes filenames beginning with a `.' in

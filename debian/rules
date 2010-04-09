@@ -13,7 +13,7 @@ DEB_HOST_GNU_CPU	:= $(shell dpkg-architecture -qDEB_HOST_GNU_CPU)
 DEB_HOST_GNU_SYSTEM	:= $(shell dpkg-architecture -qDEB_HOST_GNU_SYSTEM)
 DEB_HOST_GNU_TYPE	:= $(shell dpkg-architecture -qDEB_HOST_GNU_TYPE)
 
-VERSION		:= 3.1
+VERSION		:= 3.3
 #PKGVERSION	:= $(shell dpkg-parsechangelog \
 #			| sed -n '/Version:/s/\(.* \)\(.*\)-2\(.*\)/\2\3/p')
 #PKGVERSION	:= 3.0

@@ -37,9 +37,12 @@
 /* Ugly but working hack for binding prefix meta. */
 #define PREFIX_META_HACK
 
-/* The final, last-ditch effort file name for an init file. */
+/* The next-to-last-ditch effort file name for a user-specific init file. */
 #define DEFAULT_INPUTRC "~/.inputrc"
 #define SYSTEM_INPUTRC "/etc/inputrc"
+
+/* The ultimate last-ditch filenname for an init file -- system-wide. */
+#define SYS_INPUTRC "/etc/inputrc"
 
 /* If defined, expand tabs to spaces. */
 #define DISPLAY_TABS

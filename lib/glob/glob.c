@@ -73,7 +73,7 @@
 #endif
 
 extern void throw_to_top_level __P((void));
-extern int test_eaccess __P((char *, int));
+extern int sh_eaccess __P((char *, int));
 
 extern int extended_glob;
 
@@ -184,7 +184,7 @@ mbskipname (pat, dname)
 {
   int ret;
   wchar_t *pat_wc, *dn_wc;
-  size_t pat_n, dn_n, n;
+  size_t pat_n, dn_n;
 
   pat_n = xdupmbstowcs (&pat_wc, NULL, pat);
   dn_n = xdupmbstowcs (&dn_wc, NULL, dname);
@@ -293,7 +293,7 @@ dequote_pathname (pathname)
 #  define GLOB_TESTNAME(name)  (lstat (name, &finfo))
 #else /* !HAVE_LSTAT */
 #  if !defined (AFS)
-#    define GLOB_TESTNAME(name)  (test_eaccess (nextname, F_OK))
+#    define GLOB_TESTNAME(name)  (sh_eaccess (nextname, F_OK))
 #  else /* AFS */
 #    define GLOB_TESTNAME(name)  (access (nextname, F_OK))
 #  endif /* AFS */
@@ -470,7 +470,7 @@ glob_vector (pat, dir, flags)
       while (1)
 	{
 	  /* Make globbing interruptible in the shell. */
-	  if (interrupt_state)
+	  if (interrupt_state || terminating_signal)
 	    {
 	      lose = 1;
 	      break;
@@ -541,6 +541,9 @@ glob_vector (pat, dir, flags)
       /* Here free the strings we have got.  */
       while (lastlink)
 	{
+	  /* Since we build the list in reverse order, the first N entries
+	     will be allocated with malloc, if firstmalloc is set, from
+	     lastlink to firstmalloc. */
 	  if (firstmalloc)
 	    {
 	      if (lastlink == firstmalloc)

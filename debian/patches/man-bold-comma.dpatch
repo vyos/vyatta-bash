@@ -1,0 +1,30 @@
+#! /bin/sh -e
+
+if [ $# -eq 3 -a "$2" = '-d' ]; then
+    pdir="-d $3"
+elif [ $# -ne 1 ]; then
+    echo >&2 "`basename $0`: script expects -patch|-unpatch as argument"
+    exit 1
+fi
+case "$1" in
+    -patch) patch $pdir -f --no-backup-if-mismatch -p1 < $0;;
+    -unpatch) patch $pdir -f --no-backup-if-mismatch -R -p1 < $0;;
+    *)
+	echo >&2 "`basename $0`: script expects -patch|-unpatch as argument"
+	exit 1
+esac
+exit 0
+
+# DP: markup fix
+
+--- bash-3.1/doc/bash.1.orig	2007-05-30 09:53:07.000000000 +0200
++++ bash-3.1/doc/bash.1	2007-05-30 09:53:13.000000000 +0200
+@@ -577,7 +577,7 @@
+ have equal precedence, followed by
+ .B ;
+ and
+-.BR &,
++.BR & ,
+ which have equal precedence.
+ .PP
+ A sequence of one or more newlines may appear in a \fIlist\fP instead

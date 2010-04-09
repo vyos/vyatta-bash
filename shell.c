@@ -535,6 +535,7 @@ main (argc, argv, env)
      Variables from the environment are expected to be set, etc. */
   shell_initialize ();
 
+  set_default_lang ();
   set_default_locale_vars ();
 
   if (interactive_shell)
@@ -1238,7 +1239,7 @@ run_wordexp (words)
       wl = global_command->value.Simple->words;
       if (protected_mode)
 	for (tl = wl; tl; tl = tl->next)
-	  tl->word->flags |= W_NOCOMSUB;
+	  tl->word->flags |= W_NOCOMSUB|W_NOPROCSUB;
       result = wl ? expand_words_no_vars (wl) : (WORD_LIST *)0;
     }
   else
@@ -1566,7 +1567,7 @@ set_shell_name (argv0)
   if (argv0 && *argv0 == '-')
     {
       if (*shell_name == '-')
-        shell_name++;
+	shell_name++;
       login_shell++;
     }
 

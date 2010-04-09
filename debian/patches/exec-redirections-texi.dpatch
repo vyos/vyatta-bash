@@ -1,0 +1,29 @@
+#! /bin/sh -e
+
+if [ $# -eq 3 -a "$2" = '-d' ]; then
+    pdir="-d $3"
+elif [ $# -ne 1 ]; then
+    echo >&2 "`basename $0`: script expects -patch|-unpatch as argument"
+    exit 1
+fi
+case "$1" in
+    -patch) patch $pdir -f --no-backup-if-mismatch -p1 < $0;;
+    -unpatch) patch $pdir -f --no-backup-if-mismatch -R -p1 < $0;;
+    *)
+	echo >&2 "`basename $0`: script expects -patch|-unpatch as argument"
+	exit 1
+esac
+exit 0
+
+--- bash/doc/bashref.texi~	2005-10-03 15:07:21.000000000 -0400
++++ bash/doc/bashref.texi	2006-07-12 21:26:57.000000000 -0400
+@@ -2030,6 +2030,9 @@
+ care, as they may conflict with file descriptors the shell uses
+ internally.
+ 
++Note that the @code{exec} builtin command can make redirections take
++effect in the current shell.
++
+ @subsection Redirecting Input
+ Redirection of input causes the file whose name results from
+ the expansion of @var{word}

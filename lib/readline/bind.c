@@ -1,6 +1,6 @@
 /* bind.c -- key binding and startup file support for the readline library. */
 
-/* Copyright (C) 1987-2005 Free Software Foundation, Inc.
+/* Copyright (C) 1987-2006 Free Software Foundation, Inc.
 
    This file is part of the GNU Readline Library, a library for
    reading lines of text with interactive input and history editing.
@@ -370,7 +370,10 @@ rl_generic_bind (type, keyseq, data, map)
 
       ic = uc;
       if (ic < 0 || ic >= KEYMAP_SIZE)
-	return -1;
+        {
+          free (keys);
+	  return -1;
+        }
 
       if (META_CHAR (ic) && _rl_convert_meta_chars_to_ascii)
 	{
@@ -462,12 +465,21 @@ rl_translate_keyseq (seq, array, len)
 		}
 	      else if (c == 'M')
 		{
-		  i++;
-		  /* XXX - should obey convert-meta setting? */
+		  i++;		/* seq[i] == '-' */
+		  /* XXX - obey convert-meta setting */
 		  if (_rl_convert_meta_chars_to_ascii && _rl_keymap[ESC].type == ISKMAP)
 		    array[l++] = ESC;	/* ESC is meta-prefix */
+		  else if (seq[i+1] == '\\' && seq[i+2] == 'C' && seq[i+3] == '-')
+		    {
+		      i += 4;
+		      temp = (seq[i] == '?') ? RUBOUT : CTRL (_rl_to_upper (seq[i]));
+		      array[l++] = META (temp);
+		    }
 		  else
 		    {
+		      /* This doesn't yet handle things like \M-\a, which may
+			 or may not have any reasonable meaning.  You're
+			 probably better off using straight octal or hex. */
 		      i++;
 		      array[l++] = META (seq[i]);
 		    }
@@ -565,6 +577,11 @@ rl_untranslate_keyseq (seq)
       kseq[i++] = '-';
       c = UNMETA (c);
     }
+  else if (c == ESC)
+    {
+      kseq[i++] = '\\';
+      c = 'e';
+    }
   else if (CTRL_CHAR (c))
     {
       kseq[i++] = '\\';
@@ -613,7 +630,12 @@ _rl_untranslate_macro_value (seq)
 	  *r++ = '-';
 	  c = UNMETA (c);
 	}
-      else if (CTRL_CHAR (c) && c != ESC)
+      else if (c == ESC)
+	{
+	  *r++ = '\\';
+	  c = 'e';
+	}
+      else if (CTRL_CHAR (c))
 	{
 	  *r++ = '\\';
 	  *r++ = 'C';
@@ -672,7 +694,7 @@ rl_function_of_keyseq (keyseq, map, type)
 {
   register int i;
 
-  if (!map)
+  if (map == 0)
     map = _rl_keymap;
 
   for (i = 0; keyseq && keyseq[i]; i++)
@@ -681,17 +703,19 @@ rl_function_of_keyseq (keyseq, map, type)
 
       if (META_CHAR (ic) && _rl_convert_meta_chars_to_ascii)
 	{
-	  if (map[ESC].type != ISKMAP)
+	  if (map[ESC].type == ISKMAP)
+	    {
+	      map = FUNCTION_TO_KEYMAP (map, ESC);
+	      ic = UNMETA (ic);
+	    }
+	  /* XXX - should we just return NULL here, since this obviously
+	     doesn't match? */
+	  else
 	    {
 	      if (type)
 		*type = map[ESC].type;
 
 	      return (map[ESC].function);
-	    }
-	  else
-	    {
-	      map = FUNCTION_TO_KEYMAP (map, ESC);
-	      ic = UNMETA (ic);
 	    }
 	}
 
@@ -699,7 +723,7 @@ rl_function_of_keyseq (keyseq, map, type)
 	{
 	  /* If this is the last key in the key sequence, return the
 	     map. */
-	  if (!keyseq[i + 1])
+	  if (keyseq[i + 1] == '\0')
 	    {
 	      if (type)
 		*type = ISKMAP;
@@ -709,7 +733,12 @@ rl_function_of_keyseq (keyseq, map, type)
 	  else
 	    map = FUNCTION_TO_KEYMAP (map, ic);
 	}
-      else
+      /* If we're not at the end of the key sequence, and the current key
+	 is bound to something other than a keymap, then the entire key
+	 sequence is not bound. */
+      else if (map[ic].type != ISKMAP && keyseq[i+1])
+	return ((rl_command_func_t *)NULL);
+      else	/* map[ic].type != ISKMAP && keyseq[i+1] == 0 */
 	{
 	  if (type)
 	    *type = map[ic].type;
@@ -793,7 +822,8 @@ rl_re_read_init_file (count, ignore)
    to the first non-null filename from this list:
      1. the filename used for the previous call
      2. the value of the shell variable `INPUTRC'
-     3. /etc/inputrc and ~/.inputrc
+     3. ~/.inputrc
+     4. /etc/inputrc
    If the file existed and could be opened and read, 0 is returned,
    otherwise errno is returned. */
 int
@@ -802,33 +832,17 @@ rl_read_init_file (filename)
 {
   /* Default the filename. */
   if (filename == 0)
+    filename = last_readline_init_file;
+  if (filename == 0)
+    filename = sh_get_env_value ("INPUTRC");
+  if (filename == 0 || *filename == 0)
     {
-      filename = last_readline_init_file;
-      if (filename == 0) {
-        filename = sh_get_env_value ("INPUTRC");
-	read_system_init_file = 0;
-      }
-      if (filename == 0) {
-	filename = DEFAULT_INPUTRC;
-	read_system_init_file = 1;
-      }
+      filename = DEFAULT_INPUTRC;
+      /* Try to read DEFAULT_INPUTRC; fall back to SYS_INPUTRC on failure */
+      if (_rl_read_init_file (filename, 0) == 0)
+	return 0;
+      filename = SYS_INPUTRC;
     }
-
-  if (*filename == 0) {
-    filename = DEFAULT_INPUTRC;
-    read_system_init_file = 1;
-  }
-
-  if (read_system_init_file)
-    if (filename == last_readline_init_file)
-      {
-	filename = savestring (filename);
-	_rl_read_init_file (SYSTEM_INPUTRC, 0);
-	free (last_readline_init_file);
-	last_readline_init_file = filename;
-      }
-    else
-      _rl_read_init_file (SYSTEM_INPUTRC, 0);
 
 #if defined (__MSDOS__)
   if (_rl_read_init_file (filename, 0) == 0)
@@ -1526,8 +1540,6 @@ rl_variable_value (name)
      const char *name;
 {
   register int i;
-  int	v;
-  char *ret;
 
   /* Check for simple variables first. */
   i = find_boolean_var (name);
@@ -1968,12 +1980,16 @@ rl_invoking_keyseqs_in_map (function, map)
 		char *keyname = (char *)xmalloc (6 + strlen (seqs[i]));
 
 		if (key == ESC)
-#if 0
-		  sprintf (keyname, "\\e");
-#else
-		/* XXX - experimental */
-		  sprintf (keyname, "\\M-");
-#endif
+		  {
+		    /* If ESC is the meta prefix and we're converting chars
+		       with the eighth bit set to ESC-prefixed sequences, then
+		       we can use \M-.  Otherwise we need to use the sequence
+		       for ESC. */
+		    if (_rl_convert_meta_chars_to_ascii && map[ESC].type == ISKMAP)
+		      sprintf (keyname, "\\M-");
+		    else
+		      sprintf (keyname, "\\e");
+		  }
 		else if (CTRL_CHAR (key))
 		  sprintf (keyname, "\\C-%c", _rl_to_lower (UNCTRL (key)));
 		else if (key == RUBOUT)
@@ -2190,7 +2206,6 @@ _rl_get_string_variable_value (name)
 {
   static char numbuf[32];
   char *ret;
-  int n;
 
   if (_rl_stricmp (name, "bell-style") == 0)
     {

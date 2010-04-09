@@ -1,4 +1,6 @@
-#! /bin/bash -e
+#! /bin/bash
+
+set -e
 
 # the symlink is in the package now. So this should never happen ...
 if [ ! -e /bin/sh ]; then
@@ -12,7 +14,9 @@ update-alternatives --install \
     10 \
   || true
 
-if [ -x /usr/sbin/add-shell ]; then
+if [ "$1" = configure ] && dpkg --compare-versions "$2" le 3.2-2 \
+    && [ -x /usr/sbin/add-shell ]
+then
     /usr/sbin/add-shell /bin/bash
     /usr/sbin/add-shell /bin/rbash
 fi

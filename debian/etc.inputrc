@@ -11,3 +11,7 @@ set output-meta on
 
 #set meta-flag on
 #set convert-meta off
+
+# use a visible bell if one is available
+#set bell-style none
+#set bell-style visible

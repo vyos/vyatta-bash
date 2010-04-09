@@ -1,6 +1,6 @@
 /* Yacc grammar for bash. */
 
-/* Copyright (C) 1989-2005 Free Software Foundation, Inc.
+/* Copyright (C) 1989-2006 Free Software Foundation, Inc.
 
    This file is part of GNU Bash, the Bourne Again SHell.
 
@@ -118,7 +118,6 @@ extern int current_command_number;
 extern int sourcelevel;
 extern int posixly_correct;
 extern int last_command_exit_value;
-extern int interrupt_immediately;
 extern char *shell_name, *current_host_name;
 extern char *dist_version;
 extern int patch_level;
@@ -205,10 +204,6 @@ static void prompt_again __P((void));
 static void reset_readline_prompt __P((void));
 #endif
 static void print_prompt __P((void));
-
-#if defined (HISTORY)
-char *history_delimiting_chars __P((void));
-#endif
 
 #if defined (HANDLE_MULTIBYTE)
 static void set_line_mbstate __P((void));
@@ -1212,10 +1207,12 @@ yy_readline_get ()
 	  old_sigint = (SigHandler *)set_signal_handler (SIGINT, sigint_sighandler);
 	  interrupt_immediately++;
 	}
+      terminate_immediately = 1;
 
       current_readline_line = readline (current_readline_prompt ?
       					  current_readline_prompt : "");
 
+      terminate_immediately = 0;
       if (signal_is_ignored (SIGINT) == 0 && old_sigint)
 	{
 	  interrupt_immediately--;
@@ -1347,10 +1344,16 @@ yy_stream_get ()
   if (bash_input.location.file)
     {
       if (interactive)
-	interrupt_immediately++;
+	{
+	  interrupt_immediately++;
+	  terminate_immediately++;
+	}
       result = getc_with_restart (bash_input.location.file);
       if (interactive)
-	interrupt_immediately--;
+	{
+	  interrupt_immediately--;
+	  terminate_immediately--;
+	}
     }
   return (result);
 }
@@ -1869,7 +1872,6 @@ shell_getc (remove_quoted_newline)
   register int i;
   int c;
   unsigned char uc;
-  static int mustpop = 0;
 
   char *history_buf = NULL;
   int history_index = 0;
@@ -2211,8 +2213,8 @@ discard_until (character)
 }
 
 void
-execute_prompt_command (command)
-     char *command;
+execute_variable_command (command, vname)
+     char *command, *vname;
 {
   char *last_lastarg;
   sh_parser_state_t ps;
@@ -2222,7 +2224,7 @@ execute_prompt_command (command)
   if (last_lastarg)
     last_lastarg = savestring (last_lastarg);
 
-  parse_and_execute (savestring (command), "PROMPT_COMMAND", SEVAL_NONINT|SEVAL_NOHIST);
+  parse_and_execute (savestring (command), vname, SEVAL_NONINT|SEVAL_NOHIST);
 
   restore_parser_state (&ps);
   bind_variable ("_", last_lastarg, 0);
@@ -2625,7 +2627,7 @@ read_token (command)
 #endif /* ALIAS */
 
   /* Read a single word from input.  Start by skipping blanks. */
-  while ((character = shell_getc (1)) != EOF && whitespace (character))
+  while ((character = shell_getc (1)) != EOF && shellblank (character))
     ;
 
   if (character == EOF)
@@ -2799,6 +2801,7 @@ parse_matched_pair (qc, open, close, lenp, flags)
   char *ret, *nestret, *ttrans;
   int retind, retsize, rflags;
 
+/* itrace("parse_matched_pair: open = %c close = %c", open, close); */
   count = 1;
   pass_next_character = backq_backslash = was_dollar = in_comment = 0;
   check_comment = (flags & P_COMMAND) && qc != '\'' && qc != '"' && (flags & P_DQUOTE) == 0;
@@ -2837,7 +2840,9 @@ parse_matched_pair (qc, open, close, lenp, flags)
 
 	  continue;
 	}
-      /* Not exactly right yet */
+      /* Not exactly right yet, should handle shell metacharacters, too.  If
+	 any changes are made to this test, make analogous changes to subst.c:
+	 extract_delimited_string(). */
       else if MBTEST(check_comment && in_comment == 0 && ch == '#' && (retind == 0 || ret[retind-1] == '\n' || whitespace (ret[retind - 1])))
 	in_comment = 1;
 
@@ -2872,11 +2877,9 @@ parse_matched_pair (qc, open, close, lenp, flags)
 	}
       else if MBTEST(ch == close)		/* ending delimiter */
 	count--;
-#if 1
       /* handle nested ${...} specially. */
       else if MBTEST(open != close && was_dollar && open == '{' && ch == open) /* } */
 	count++;
-#endif
       else if MBTEST(((flags & P_FIRSTCLOSE) == 0) && ch == open)	/* nested begin */
 	count++;
 
@@ -2888,8 +2891,10 @@ parse_matched_pair (qc, open, close, lenp, flags)
 	{
 	  if MBTEST((flags & P_ALLOWESC) && ch == '\\')
 	    pass_next_character++;
+#if 0
 	  else if MBTEST((flags & P_BACKQUOTE) && ch == '\\')
 	    backq_backslash++;
+#endif
 	  continue;
 	}
 
@@ -2972,6 +2977,7 @@ add_nestret:
 	    }
 	  FREE (nestret);
 	}
+#if 0
       else if MBTEST(qc == '`' && (ch == '"' || ch == '\'') && in_comment == 0)
 	{
 	  /* Add P_BACKQUOTE so backslash quotes the next character and
@@ -2981,7 +2987,8 @@ add_nestret:
 	  nestret = parse_matched_pair (0, ch, ch, &nestlen, rflags|P_BACKQUOTE);
 	  goto add_nestret;
 	}
-      else if MBTEST(was_dollar && (ch == '(' || ch == '{' || ch == '['))	/* ) } ] */
+#endif
+      else if MBTEST(open != '`' && was_dollar && (ch == '(' || ch == '{' || ch == '['))	/* ) } ] */
 	/* check for $(), $[], or ${} inside quoted string. */
 	{
 	  if (open == ch)	/* undo previous increment */
@@ -3013,8 +3020,8 @@ static int
 parse_dparen (c)
      int c;
 {
-  int cmdtyp, len, sline;
-  char *wval, *wv2;
+  int cmdtyp, sline;
+  char *wval;
   WORD_DESC *wd;
 
 #if defined (ARITH_FOR_COMMAND)
@@ -3026,7 +3033,6 @@ parse_dparen (c)
 	{
 	  wd = alloc_word_desc ();
 	  wd->word = wval;
-	  wd = make_word (wval);
 	  yylval.word_list = make_word_list (wd, (WORD_LIST *)NULL);
 	  return (ARITH_FOR_EXPRS);
 	}
@@ -3576,7 +3582,7 @@ read_token_word (character)
 		}
 	      else
 		{
-		  /* Try to locale)-expand the converted string. */
+		  /* Try to locale-expand the converted string. */
 		  ttrans = localeexpand (ttok, 0, ttoklen - 1, first_line, &ttranslen);
 		  free (ttok);
 
@@ -3756,8 +3762,8 @@ got_token:
   if (dollar_present)
     the_word->flags |= W_HASDOLLAR;
   if (quoted)
-    the_word->flags |= W_QUOTED;
-  if (compound_assignment)
+    the_word->flags |= W_QUOTED;		/*(*/
+  if (compound_assignment && token[token_index-1] == ')')
     the_word->flags |= W_COMPASSIGN;
   /* A word is an assignment if it appears at the beginning of a
      simple command, or after another assignment word.  This is
@@ -4056,7 +4062,7 @@ decode_prompt_string (string)
   int last_exit_value;
 #if defined (PROMPT_STRING_DECODE)
   int result_size, result_index;
-  int c, n;
+  int c, n, i;
   char *temp, octal_string[4];
   struct tm *tm;  
   time_t the_time;
@@ -4218,7 +4224,7 @@ decode_prompt_string (string)
 	    case 'W':
 	      {
 		/* Use the value of PWD because it is much more efficient. */
-		char t_string[PATH_MAX], *t;
+		char t_string[PATH_MAX];
 		int tlen;
 
 		temp = get_string_value ("PWD");
@@ -4328,9 +4334,12 @@ decode_prompt_string (string)
 		  break;
 		}
 	      temp = (char *)xmalloc (3);
-	      temp[0] = '\001';
-	      temp[1] = (c == '[') ? RL_PROMPT_START_IGNORE : RL_PROMPT_END_IGNORE;
-	      temp[2] = '\0';
+	      n = (c == '[') ? RL_PROMPT_START_IGNORE : RL_PROMPT_END_IGNORE;
+	      i = 0;
+	      if (n == CTLESC || n == CTLNUL)
+		temp[i++] = CTLESC;
+	      temp[i++] = n;
+	      temp[i] = '\0';
 	      goto add_string;
 #endif /* READLINE */
 
@@ -4426,15 +4435,15 @@ yyerror (msg)
 }
 
 static char *
-error_token_from_token (token)
-     int token;
+error_token_from_token (tok)
+     int tok;
 {
   char *t;
 
-  if (t = find_token_in_alist (token, word_token_alist, 0))
+  if (t = find_token_in_alist (tok, word_token_alist, 0))
     return t;
 
-  if (t = find_token_in_alist (token, other_token_alist, 0))
+  if (t = find_token_in_alist (tok, other_token_alist, 0))
     return t;
 
   t = (char *)NULL;
@@ -4826,6 +4835,7 @@ parse_compound_assignment (retlenp)
     }
 
   last_read_token = orig_last_token;		/* XXX - was WORD? */
+
   if (wl)
     {
       rl = REVERSE_LIST (wl, WORD_LIST *);

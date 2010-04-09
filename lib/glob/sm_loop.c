@@ -1,4 +1,4 @@
-/* Copyright (C) 1991-2005 Free Software Foundation, Inc.
+/* Copyright (C) 1991-2006 Free Software Foundation, Inc.
 
    This file is part of GNU Bash, the Bourne Again SHell.
    
@@ -15,7 +15,6 @@
    You should have received a copy of the GNU General Public License along
    with Bash; see the file COPYING.  If not, write to the Free Software
    Foundation, 59 Temple Place, Suite 330, Boston, MA 02111 USA. */
-
 int FCT __P((CHAR *, CHAR *, int));
 
 static int GMATCH __P((CHAR *, CHAR *, CHAR *, CHAR *, int));
@@ -693,7 +692,7 @@ fprintf(stderr, "extmatch: flags = %d\n", flags);
       return (FNM_NOMATCH);
 
     case L('?'):		/* match zero or one of the patterns */
-    case L('@'):		/* match exactly one of the patterns */
+    case L('@'):		/* match one (or more) of the patterns */
       /* If we can get away with no matches, don't even bother.  Just
 	 call gmatch on the rest of the pattern and return success if
 	 it succeeds. */
