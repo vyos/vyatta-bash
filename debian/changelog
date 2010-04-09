@@ -1,3 +1,12 @@
+vyatta-bash (3.2-4-vyatta-1) unstable; urgency=low
+
+  * Don't remove vbash from /etc/shells during upgrade
+  * Auditing is on for vbash
+  * Fix command auditing to work right
+  * Integrate bash 3.2 version
+
+ -- Stephen Hemminger <stephen.hemminger@vyatta.com>  Fri, 09 Apr 2010 16:17:17 -0700
+
 vyatta-bash (3.1dfsg-8-vyatta-17) unstable; urgency=low
 
   * Add auditing support to bash
