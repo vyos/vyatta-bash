@@ -45,12 +45,6 @@
 #  include "bashhist.h"
 #endif
 
-#if defined (AUDIT_SHELL)
-#  include "filecntl.h"
-#  include <libaudit.h>
-#  include <errno.h>
-#endif
-
 extern int EOF_reached;
 extern int indirection_level;
 extern int posixly_correct;
@@ -68,62 +62,19 @@ extern char *current_readline_line;
 extern int current_readline_line_index;
 #endif
 
-#if defined (AUDIT_SHELL)
-static int audit_fd = -1;
-static char *audit_tty;
-
-static int
-audit_start ()
-{
-  if (audit_fd < 0)
-    {
-      audit_fd = audit_open ();
-      if (audit_fd < 0) 
-	{
-	  if (errno != EINVAL && errno != EPROTONOSUPPORT 
-	      && errno != EAFNOSUPPORT)
-	    return -1;
-	}
-      else
-	SET_CLOSE_ON_EXEC(audit_fd);
-    }
-
-  if (audit_tty == NULL)
-    {
-      char *tty = ttyname(fileno(stdin));
-      if (tty)
-	audit_tty = strdup(tty);
-    }
-
-  return 0;
-}
-
-static void
-audit (result)
-        int result;
-{
-  audit_log_user_command (audit_fd, AUDIT_USER_CMD, current_readline_line,
-			  audit_tty, result == EXECUTION_SUCCESS);
-}
-#endif
 
 /* Read and execute commands until EOF is reached.  This assumes that
    the input source has already been initialized. */
 int
 reader_loop ()
 {
-  int our_indirection_level, result;
+  int our_indirection_level;
   COMMAND * volatile current_command;
 
   current_command = (COMMAND *)NULL;
   USE_VAR(current_command);
 
   our_indirection_level = ++indirection_level;
-
-#if defined (AUDIT_SHELL)
-  if (audited && interactive_shell && audit_start () < 0)
-	  return EXECUTION_FAILURE;
-#endif
 
   while (EOF_Reached == 0)
     {
@@ -200,10 +151,7 @@ reader_loop ()
 	      executing = 1;
 	      stdin_redir = 0;
 
-	      result = execute_command (current_command);
-#if defined (AUDIT_SHELL)
-	      audit (result);
-#endif
+	      execute_command (current_command);
 
 	    exec_done:
 	      QUIT;

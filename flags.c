@@ -142,12 +142,6 @@ int restricted = 0;		/* currently restricted */
 int restricted_shell = 0;	/* shell was started in restricted mode. */
 #endif /* RESTRICTED_SHELL */
 
-#if defined (AUDIT_SHELL)
-/* Non-zero means that this shell is audited. An audited shell records
-   each command that the root user executes. */
-int audited = 0;		/* shell was started in audit mode. */
-#endif /* AUDIT_SHELL */
-
 /* Non-zero means that this shell is running in `privileged' mode.  This
    is required if the shell is to run setuid.  If the `-p' option is
    not supplied at startup, and the real and effective uids or gids

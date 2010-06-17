@@ -43,7 +43,6 @@ d	= debian/$(p)
 conf_args = \
 	--with-curses \
 	--disable-net-redirections \
-	--enable-audit \
 	--enable-largefile \
 	--prefix=/usr \
 	--infodir=/usr/share/info \

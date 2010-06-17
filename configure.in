@@ -256,10 +256,6 @@ fi
 if test $opt_restricted = yes; then
 AC_DEFINE(RESTRICTED_SHELL)
 fi
-if test $opt_audit = yes; then
-AC_DEFINE(AUDIT_SHELL)
-AUDIT_LIB='-laudit'
-fi
 if test $opt_process_subst = yes; then
 AC_DEFINE(PROCESS_SUBSTITUTION)
 fi
@@ -360,8 +356,6 @@ AC_SUBST(HELPDIR)
 AC_SUBST(HELPDIRDEFINE)
 AC_SUBST(HELPINSTALL)
 AC_SUBST(HELPSTRINGS)
-
-AC_SUBST(AUDIT_LIB)
 
 echo ""
 echo "Beginning configuration for bash-$BASHVERS-$RELSTATUS for ${host_cpu}-${host_vendor}-${host_os}"

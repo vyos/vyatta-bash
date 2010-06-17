@@ -77,10 +77,6 @@ extern int shell_is_restricted __P((char *));
 extern int maybe_make_restricted __P((char *));
 #endif
 
-#if defined (AUDIT_SHELL)
-extern int maybe_make_audited __P((char *));
-#endif
-
 extern void unset_bash_input __P((int));
 extern void get_current_user_info __P((void));
 

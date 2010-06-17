@@ -97,11 +97,6 @@
 #  define RESTRICTED_SHELL_NAME "rbash"
 #endif
 
-/* If the shell is called by this name, it will become audited. */
-#if defined (AUDIT_SHELL)
-#  define AUDIT_SHELL_NAME "vbash"
-#endif
-
 /***********************************************************/
 /* Make sure feature defines have necessary prerequisites. */
 /***********************************************************/
