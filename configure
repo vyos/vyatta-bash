@@ -2627,8 +2627,6 @@ fi
 
 
 
-
-
 echo ""
 echo "Beginning configuration for bash-$BASHVERS-$RELSTATUS for ${host_cpu}-${host_vendor}-${host_os}"
 echo ""
@@ -28367,7 +28365,6 @@ HELPDIR!$HELPDIR$ac_delim
 HELPDIRDEFINE!$HELPDIRDEFINE$ac_delim
 HELPINSTALL!$HELPINSTALL$ac_delim
 HELPSTRINGS!$HELPSTRINGS$ac_delim
-AUDIT_LIB!$AUDIT_LIB$ac_delim
 CC!$CC$ac_delim
 CFLAGS!$CFLAGS$ac_delim
 LDFLAGS!$LDFLAGS$ac_delim
@@ -28404,6 +28401,7 @@ INSTALL_DATA!$INSTALL_DATA$ac_delim
 AR!$AR$ac_delim
 RANLIB!$RANLIB$ac_delim
 YACC!$YACC$ac_delim
+YFLAGS!$YFLAGS$ac_delim
 _ACEOF
 
   if test `sed -n "s/.*$ac_delim\$/X/p" conf$$subs.sed | grep -c X` = 97; then
@@ -28445,7 +28443,6 @@ _ACEOF
 ac_delim='%!_!# '
 for ac_last_try in false false false false false :; do
   cat >conf$$subs.sed <<_ACEOF
-YFLAGS!$YFLAGS$ac_delim
 SET_MAKE!$SET_MAKE$ac_delim
 MAKE_SHELL!$MAKE_SHELL$ac_delim
 SIZE!$SIZE$ac_delim
@@ -28502,7 +28499,7 @@ LOCAL_DEFS!$LOCAL_DEFS$ac_delim
 LTLIBOBJS!$LTLIBOBJS$ac_delim
 _ACEOF
 
-  if test `sed -n "s/.*$ac_delim\$/X/p" conf$$subs.sed | grep -c X` = 55; then
+  if test `sed -n "s/.*$ac_delim\$/X/p" conf$$subs.sed | grep -c X` = 54; then
     break
   elif $ac_last_try; then
     { { echo "$as_me:$LINENO: error: could not make $CONFIG_STATUS" >&5
