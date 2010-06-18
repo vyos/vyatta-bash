@@ -85,6 +85,9 @@ extern int reader_loop __P((void));
 extern int parse_command __P((void));
 extern int read_command __P((void));
 
+/* Functions from logging.c */
+extern void initialize_logging __P((void));
+
 /* Functions from braces.c. */
 #if defined (BRACE_EXPANSION)
 extern char **brace_expand __P((char *));

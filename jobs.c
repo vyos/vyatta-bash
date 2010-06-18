@@ -3023,6 +3023,7 @@ waitchld (wpid, block)
 
       if (PEXITED (child))
 	{
+	  log_process_exit (child);
 	  js.c_totreaped++;
 	  if (job != NO_JOB)
 	    js.c_reaped++;
