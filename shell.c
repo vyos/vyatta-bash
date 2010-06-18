@@ -703,6 +703,8 @@ main (argc, argv, env)
       /* Initialize terminal state for interactive shells after the
 	 .bash_profile and .bashrc are interpreted. */
       get_tty_state ();
+
+      initialize_logging();
     }
 
 #if !defined (ONESHOT)
