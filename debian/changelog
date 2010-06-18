@@ -1,3 +1,10 @@
+vyatta-bash (3.2-4-vyatta-3) unstable; urgency=low
+
+  * Remove AUDIT_SHELL option
+  * Shell command logging support
+
+ -- Stephen Hemminger <stephen.hemminger@vyatta.com>  Fri, 18 Jun 2010 15:17:59 -0700
+
 vyatta-bash (3.2-4-vyatta-2) unstable; urgency=low
 
   * Remove AUDIT_SHELL option
