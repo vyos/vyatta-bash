@@ -74,7 +74,10 @@ void log_process_exit (child)
   size_t cc;
   struct command_log *lrec;
 
-  if (message_queue == (mqd_t) -1)
+  if (message_queue == (mqd_t) -1)	/* message queue does not exist */
+    return;
+
+  if (child->command == NULL)		/* no command info */
     return;
 
   cc = sizeof(*lrec) + strlen(child->command) + 1;
