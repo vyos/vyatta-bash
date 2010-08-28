@@ -98,12 +98,6 @@ OBJECTS = readline.o vi_mode.o funmap.o keymaps.o parens.o search.o \
 	  util.o kill.o undo.o macro.o input.o callback.o terminal.o \
 	  text.o nls.o misc.o $(HISTOBJ) $(TILDEOBJ) xmalloc.o compat.o
 
-# The texinfo files which document this library.
-DOCSOURCE = doc/rlman.texinfo doc/rltech.texinfo doc/rluser.texinfo
-DOCOBJECT = doc/readline.dvi
-DOCSUPPORT = doc/Makefile
-DOCUMENTATION = $(DOCSOURCE) $(DOCOBJECT) $(DOCSUPPORT)
-
 SUPPORT = Makefile ChangeLog $(DOCSUPPORT) examples/[-a-z.]*
 
 SOURCES  = $(CSOURCES) $(HSOURCES) $(DOCSOURCE)
@@ -129,7 +123,6 @@ libhistory.a: $(HISTOBJ) xmalloc.o
 
 documentation: force
 	test -d doc || mkdir doc
-	-( cd doc && $(MAKE) $(MFLAGS) )
 
 # Since tilde.c is shared between readline and bash, make sure we compile
 # it with the right flags when it's built as part of readline
@@ -153,13 +146,10 @@ tags:	force
 
 clean:	force
 	$(RM) $(OBJECTS) *.a
-	-( cd doc && $(MAKE) $(MFLAGS) $@ )
 
 mostlyclean: clean
-	-( cd doc && $(MAKE) $(MFLAGS) $@ )
 
 distclean maintainer-clean: clean
-	-( cd doc && $(MAKE) $(MFLAGS) $@ )
 	$(RM) Makefile
 	$(RM) TAGS tags
 

@@ -487,10 +487,6 @@ BUILTINS_LIB = -lbuiltins
 BUILTINS_LDFLAGS = -L$(DEFDIR)
 BUILTINS_DEP = $(BUILTINS_LIBRARY)
 
-# Documentation for the shell.
-DOCSRC = $(srcdir)/doc
-DOCDIR = $(dot)/doc
-
 # Translations and other i18n support files
 PO_SRC = $(srcdir)/po/
 PO_DIR = $(dot)/po/
@@ -508,7 +504,7 @@ CREATED_SUPPORT = signames.h recho$(EXEEXT) zecho$(EXEEXT) printenv$(EXEEXT) \
 		  buildversion.o mksignames.o signames.o buildsignames.o
 CREATED_CONFIGURE = config.h config.cache config.status config.log \
 		    stamp-h po/POTFILES
-CREATED_MAKEFILES = Makefile builtins/Makefile doc/Makefile \
+CREATED_MAKEFILES = Makefile builtins/Makefile \
 		    lib/readline/Makefile lib/glob/Makefile \
 		    lib/sh/Makefile lib/tilde/Makefile lib/malloc/Makefile \
 		    lib/termcap/Makefile examples/loadables/Makefile \
@@ -695,10 +691,8 @@ reconfig: force
 #	$(MAKE) -f $(srcdir)/Makefile $(MFLAGS) srcdir=$(srcdir)
 
 doc documentation:  force
-	@(cd $(DOCDIR) ; $(MAKE) $(MFLAGS) )
 
 info dvi ps: force
-	@(cd $(DOCDIR) ; $(MAKE) $(MFLAGS) CFLAGS='$(CCFLAGS)' $@ )
 
 force:
 
@@ -733,7 +727,6 @@ basic-clean:
 	$(RM) .build .made version.h 
 
 clean:	basic-clean
-	( cd $(DOCDIR) && $(MAKE) $(MFLAGS) $@ )
 	( cd builtins && $(MAKE) $(MFLAGS) $@ )
 	-( cd $(SDIR) && $(MAKE) $(MFLAGS) $@ )
 	-for libdir in ${LIB_SUBDIRS}; do \
@@ -743,7 +736,6 @@ clean:	basic-clean
 	$(RM) $(CREATED_SUPPORT)
 
 mostlyclean: basic-clean
-	( cd $(DOCDIR) && $(MAKE) $(MFLAGS) $@ )
 	( cd builtins && $(MAKE) $(MFLAGS) $@ )
 	-( cd $(SDIR) && $(MAKE) $(MFLAGS) $@ )
 	-for libdir in ${LIB_SUBDIRS}; do \
@@ -752,7 +744,6 @@ mostlyclean: basic-clean
 	-( cd $(PO_DIR) ; $(MAKE) $(MFLAGS) DESTDIR=$(DESTDIR) $@ )
 
 distclean:	basic-clean maybe-clean
-	( cd $(DOCDIR) && $(MAKE) $(MFLAGS) $@ )
 	( cd builtins && $(MAKE) $(MFLAGS) $@ )
 	-( cd $(SDIR) && $(MAKE) $(MFLAGS) $@ )
 	-for libdir in ${LIB_SUBDIRS}; do \
@@ -766,7 +757,6 @@ maintainer-clean:	basic-clean
 	@echo This command is intended for maintainers to use.
 	@echo It deletes files that may require special tools to rebuild.
 	$(RM) y.tab.c y.tab.h parser-built tags TAGS
-	( cd $(DOCDIR) && $(MAKE) $(MFLAGS) $@ )
 	( cd builtins && $(MAKE) $(MFLAGS) $@ )
 	( cd $(SDIR) && $(MAKE) $(MFLAGS) $@ )
 	-for libdir in ${LIB_SUBDIRS}; do \
