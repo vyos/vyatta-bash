@@ -1,3 +1,9 @@
+vyatta-bash (3.2-4-vyatta-8) unstable; urgency=low
+
+  * fix for bug 6159
+
+ -- An-Cheng Huang <ancheng@vyatta.com>  Wed, 08 Sep 2010 18:12:01 -0700
+
 vyatta-bash (3.2-4-vyatta-7) unstable; urgency=low
 
   * UNRELEASED
