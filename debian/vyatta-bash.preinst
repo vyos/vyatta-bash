@@ -1,0 +1,21 @@
+#! /bin/sh -e
+
+force_divert ()
+{
+  dfile=$1
+  dpkg-divert --remove $dfile || true
+  dpkg-divert --add $dfile || true
+  mv -f $dfile $dfile.distrib >/dev/null 2>&1 || true
+}
+
+# remove dash's divert and create a "local" one
+force_divert /bin/sh
+ln -sf bash /bin/sh
+
+# divert /etc/profile.d/bash_completion.sh so the completion scripts don't
+# get sourced twice.
+force_divert /etc/profile.d/bash_completion.sh
+
+#DEBHELPER#
+
+exit 0
