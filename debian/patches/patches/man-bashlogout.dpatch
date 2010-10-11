@@ -1,0 +1,31 @@
+#! /bin/sh -e
+
+if [ $# -eq 3 -a "$2" = '-d' ]; then
+    pdir="-d $3"
+elif [ $# -ne 1 ]; then
+    echo >&2 "`basename $0`: script expects -patch|-unpatch as argument"
+    exit 1
+fi
+case "$1" in
+    -patch) patch $pdir -f --no-backup-if-mismatch -p1 < $0;;
+    -unpatch) patch $pdir -f --no-backup-if-mismatch -R -p1 < $0;;
+    *)
+	echo >&2 "`basename $0`: script expects -patch|-unpatch as argument"
+	exit 1
+esac
+exit 0
+
+# DP: document /etc/bash.bashrc in bash man page
+
+--- bash/doc/bash.1~	2004-06-19 15:53:01.000000000 +0200
++++ bash/doc/bash.1	2004-06-19 15:53:57.000000000 +0200
+@@ -8283,6 +8283,9 @@
+ .FN /etc/bash.bashrc
+ The systemwide per-interactive-shell startup file
+ .TP
++.FN /etc/bash.bash.logout
++The systemwide login shell cleanup file, executed when a login shell exits
++.TP
+ .FN ~/.bash_profile
+ The personal initialization file, executed for login shells
+ .TP

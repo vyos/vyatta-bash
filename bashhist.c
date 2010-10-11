@@ -1,22 +1,22 @@
 /* bashhist.c -- bash interface to the GNU history library. */
 
-/* Copyright (C) 1993-2004 Free Software Foundation, Inc.
+/* Copyright (C) 1993-2009 Free Software Foundation, Inc.
 
    This file is part of GNU Bash, the Bourne Again SHell.
 
-   Bash is free software; you can redistribute it and/or modify it under
-   the terms of the GNU General Public License as published by the Free
-   Software Foundation; either version 2, or (at your option) any later
-   version.
+   Bash is free software: you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation, either version 3 of the License, or
+   (at your option) any later version.
 
-   Bash is distributed in the hope that it will be useful, but WITHOUT ANY
-   WARRANTY; without even the implied warranty of MERCHANTABILITY or
-   FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
-   for more details.
+   Bash is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
 
-   You should have received a copy of the GNU General Public License along
-   with Bash; see the file COPYING.  If not, write to the Free Software
-   Foundation, 59 Temple Place, Suite 330, Boston, MA 02111 USA. */
+   You should have received a copy of the GNU General Public License
+   along with Bash.  If not, see <http://www.gnu.org/licenses/>.
+*/
 
 #include "config.h"
 
@@ -37,6 +37,10 @@
 #include "filecntl.h"
 
 #include "bashintl.h"
+
+#if defined (SYSLOG_HISTORY)
+#  include <syslog.h>
+#endif
 
 #include "shell.h"
 #include "flags.h"
@@ -80,6 +84,7 @@ static struct ignorevar histignore =
    list.  This is different than the user-controlled behaviour; this
    becomes zero when we read lines from a file, for example. */
 int remember_on_history = 1;
+int enable_history_list = 1;	/* value for `set -o history' */
 
 /* The number of lines that Bash has added to this history session.  The
    difference between the number of the top element in the history list
@@ -234,7 +239,7 @@ bash_history_reinit (interact)
   history_expansion = interact != 0;
   history_expansion_inhibited = 1;
 #endif
-  remember_on_history = interact != 0;
+  remember_on_history = enable_history_list = interact != 0;
   history_inhibit_expansion_function = bash_history_inhibit_expansion;
 }
 
@@ -264,7 +269,6 @@ void
 load_history ()
 {
   char *hf;
-  struct stat buf;
 
   /* Truncate history file for interactive shells which desire it.
      Note that the history file is automatically truncated to the
@@ -279,12 +283,62 @@ load_history ()
   /* Read the history in HISTFILE into the history list. */
   hf = get_string_value ("HISTFILE");
 
-  if (hf && *hf && stat (hf, &buf) == 0)
+  if (hf && *hf && file_exists (hf))
     {
       read_history (hf);
       using_history ();
       history_lines_in_file = where_history ();
     }
+}
+
+void
+bash_clear_history ()
+{
+  clear_history ();
+  history_lines_this_session = 0;
+}
+
+/* Delete and free the history list entry at offset I. */
+int
+bash_delete_histent (i)
+     int i;
+{
+  HIST_ENTRY *discard;
+
+  discard = remove_history (i);
+  if (discard)
+    free_history_entry (discard);
+  history_lines_this_session--;
+
+  return 1;
+}
+
+int
+bash_delete_last_history ()
+{
+  register int i;
+  HIST_ENTRY **hlist, *histent;
+  int r;
+
+  hlist = history_list ();
+  if (hlist == NULL)
+    return 0;
+
+  for (i = 0; hlist[i]; i++)
+    ;
+  i--;
+
+  /* History_get () takes a parameter that must be offset by history_base. */
+  histent = history_get (history_base + i);	/* Don't free this */
+  if (histent == NULL)
+    return 0;
+
+  r = bash_delete_histent (i);
+
+  if (where_history () > history_length)
+    history_set_pos (history_length);
+
+  return r;
 }
 
 #ifdef INCLUDE_UNUSED
@@ -293,10 +347,9 @@ void
 save_history ()
 {
   char *hf;
-  struct stat buf;
 
   hf = get_string_value ("HISTFILE");
-  if (hf && *hf && stat (hf, &buf) == 0)
+  if (hf && *hf && file_exists (hf))
     {
       /* Append only the lines that occurred this session to
 	 the history file. */
@@ -306,7 +359,6 @@ save_history ()
 	append_history (history_lines_this_session, hf);
       else
 	write_history (hf);
-
       sv_histsize ("HISTFILESIZE");
     }
 }
@@ -347,7 +399,6 @@ maybe_save_shell_history ()
 {
   int result;
   char *hf;
-  struct stat buf;
 
   result = 0;
   if (history_lines_this_session)
@@ -357,7 +408,7 @@ maybe_save_shell_history ()
       if (hf && *hf)
 	{
 	  /* If the file doesn't exist, then create it. */
-	  if (stat (hf, &buf) == -1)
+	  if (file_exists (hf) == 0)
 	    {
 	      int file;
 	      file = open (hf, O_CREAT | O_TRUNC | O_WRONLY, 0600);
@@ -644,6 +695,26 @@ check_add_history (line, force)
   return 0;
 }
 
+#if defined (SYSLOG_HISTORY)
+#define SYSLOG_MAXLEN 600
+
+void
+bash_syslog_history (line)
+     const char *line;
+{
+  char trunc[SYSLOG_MAXLEN];
+
+  if (strlen(line) < SYSLOG_MAXLEN)
+    syslog (SYSLOG_FACILITY|SYSLOG_LEVEL, "HISTORY: PID=%d UID=%d %s", getpid(), current_user.uid, line);
+  else
+    {
+      strncpy (trunc, line, SYSLOG_MAXLEN);
+      trunc[SYSLOG_MAXLEN - 1] = '\0';
+      syslog (SYSLOG_FACILITY|SYSLOG_LEVEL, "HISTORY (TRUNCATED): PID=%d UID=%d %s", getpid(), current_user.uid, trunc);
+    }
+}
+#endif
+     	
 /* Add a line to the history list.
    The variable COMMAND_ORIENTED_HISTORY controls the style of history
    remembering;  when non-zero, and LINE is not the first line of a
@@ -698,6 +769,10 @@ bash_add_history (line)
 
   if (add_it)
     really_add_history (line);
+
+#if defined (SYSLOG_HISTORY)
+  bash_syslog_history (line);
+#endif
 
   using_history ();
 }

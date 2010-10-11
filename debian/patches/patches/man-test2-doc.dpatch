@@ -1,0 +1,32 @@
+#! /bin/sh -e
+
+if [ $# -eq 3 -a "$2" = '-d' ]; then
+    pdir="-d $3"
+elif [ $# -ne 1 ]; then
+    echo >&2 "`basename $0`: script expects -patch|-unpatch as argument"
+    exit 1
+fi
+case "$1" in
+    -patch) patch $pdir -f --no-backup-if-mismatch -p0 < $0;;
+    -unpatch) patch $pdir -f --no-backup-if-mismatch -R -p0 < $0;;
+    *)
+	echo >&2 "`basename $0`: script expects -patch|-unpatch as argument"
+	exit 1
+esac
+exit 0
+
+# DP: Document handling of parameters of the test builtin.
+
+--- doc/bashref.texi~	2005-09-09 19:51:31.150172600 +0000
++++ doc/bashref.texi	2005-09-09 19:52:12.693857000 +0000
+@@ -5264,6 +5264,10 @@
+ Unless otherwise specified, primaries that operate on files follow symbolic
+ links and operate on the target of the link, rather than the link itself.
+ 
++See the description of the @code{test} builtin command (section
++@pxref{Bash Builtins} below) for the handling of parameters
++(i.e. missing parameters).
++
+ @table @code
+ @item -a @var{file}
+ True if @var{file} exists.

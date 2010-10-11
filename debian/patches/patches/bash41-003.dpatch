@@ -1,0 +1,67 @@
+#! /bin/sh -e
+
+if [ $# -eq 3 -a "$2" = '-d' ]; then
+    pdir="-d $3"
+elif [ $# -ne 1 ]; then
+    echo >&2 "`basename $0`: script expects -patch|-unpatch as argument"
+    exit 1
+fi
+case "$1" in
+    -patch) patch $pdir -f --no-backup-if-mismatch -p1 < $0;;
+    -unpatch) patch $pdir -f --no-backup-if-mismatch -R -p1 < $0;;
+    *)
+	echo >&2 "`basename $0`: script expects -patch|-unpatch as argument"
+	exit 1
+esac
+exit 0
+
+# DP: bash-4.1 upstream patch 003
+
+			     BASH PATCH REPORT
+			     =================
+
+Bash-Release:	4.1
+Patch-ID:	bash41-003
+
+Bug-Reported-by:	coyote@wariat.org.pl
+Bug-Reference-ID:	<4b64a1f8.06e2660a.60af.4bfb@mx.google.com>
+Bug-Reference-URL:	http://lists.gnu.org/archive/html/bug-bash/2010-01/msg00135.html
+
+Bug-Description:
+
+If command completion is attempted on a word with a quoted globbing
+character (e.g., `*' or `?'), bash can reference a NULL pointer and
+dump core.
+
+Patch (apply with `patch -p0'):
+
+*** ../bash-4.1-patched/bashline.c	2009-10-24 14:10:19.000000000 -0400
+--- ./bashline.c	2010-01-30 21:53:49.000000000 -0500
+***************
+*** 1681,1685 ****
+       characters in the common prefix are bad) will ever be returned on
+       regular completion. */
+!   if (glob_pattern_p (hint))
+      {
+        if (state == 0)
+--- 1681,1685 ----
+       characters in the common prefix are bad) will ever be returned on
+       regular completion. */
+!   if (globpat)
+      {
+        if (state == 0)
+*** ../bash-4.1-patched/patchlevel.h	2009-10-01 16:39:22.000000000 -0400
+--- ./patchlevel.h	2010-01-14 09:38:08.000000000 -0500
+***************
+*** 26,30 ****
+     looks for to find the patch level (for the sccs version string). */
+  
+! #define PATCHLEVEL 2
+  
+  #endif /* _PATCHLEVEL_H_ */
+--- 26,30 ----
+     looks for to find the patch level (for the sccs version string). */
+  
+! #define PATCHLEVEL 3
+  
+  #endif /* _PATCHLEVEL_H_ */

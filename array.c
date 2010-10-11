@@ -9,23 +9,23 @@
  * chet@ins.cwru.edu
  */
 
-/* Copyright (C) 1997-2004 Free Software Foundation, Inc.
+/* Copyright (C) 1997-2009 Free Software Foundation, Inc.
 
    This file is part of GNU Bash, the Bourne Again SHell.
 
-   Bash is free software; you can redistribute it and/or modify it under
-   the terms of the GNU General Public License as published by the Free
-   Software Foundation; either version 2, or (at your option) any later
-   version.
+   Bash is free software: you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation, either version 3 of the License, or
+   (at your option) any later version.
 
-   Bash is distributed in the hope that it will be useful, but WITHOUT ANY
-   WARRANTY; without even the implied warranty of MERCHANTABILITY or
-   FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
-   for more details.
+   Bash is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
 
-   You should have received a copy of the GNU General Public License along
-   with Bash; see the file COPYING.  If not, write to the Free Software
-   Foundation, 59 Temple Place, Suite 330, Boston, MA 02111 USA. */
+   You should have received a copy of the GNU General Public License
+   along with Bash.  If not, see <http://www.gnu.org/licenses/>.
+*/
 
 #include "config.h"
 
@@ -54,6 +54,31 @@
 	} while(0)
 
 static char *array_to_string_internal __P((ARRAY_ELEMENT *, ARRAY_ELEMENT *, char *, int));
+
+static ARRAY *lastarray = 0;
+static ARRAY_ELEMENT *lastref = 0;
+
+#define IS_LASTREF(a)	((a) == lastarray)
+
+#define INVALIDATE_LASTREF(a) \
+do { \
+	if ((a) == lastarray) { \
+		lastarray = 0; \
+		lastref = 0; \
+	} \
+} while (0)
+
+#define SET_LASTREF(a, e) \
+do { \
+	lastarray = (a); \
+	lastref = (e); \
+} while (0)
+
+#define UNSET_LASTREF() \
+do { \
+	lastarray = 0; \
+	lastref = 0; \
+} while (0)
 
 ARRAY *
 array_create()
@@ -87,6 +112,7 @@ ARRAY	*a;
 	a->head->next = a->head->prev = a->head;
 	a->max_index = -1;
 	a->num_elements = 0;
+	INVALIDATE_LASTREF(a);
 }
 
 void
@@ -120,7 +146,6 @@ ARRAY	*a;
 	return(a1);
 }
 
-#ifdef INCLUDE_UNUSED
 /*
  * Make and return a new array composed of the elements in array A from
  * S to E, inclusive.
@@ -138,16 +163,15 @@ ARRAY_ELEMENT	*s, *e;
 	a = array_create ();
 	a->type = array->type;
 
-	for (p = s, i = 0; p != e; p = element_forw(p), i++) {
+	for (mi = 0, p = s, i = 0; p != e; p = element_forw(p), i++) {
 		n = array_create_element (element_index(p), element_value(p));
 		ADD_BEFORE(a->head, n);
-		mi = element_index(ae);
+		mi = element_index(n);
 	}
 	a->num_elements = i;
 	a->max_index = mi;
 	return a;
 }
-#endif
 
 /*
  * Walk the array, calling FUNC once for each element, with the array
@@ -187,6 +211,7 @@ int	n, flags;
 	if (a == 0 || array_empty(a) || n <= 0)
 		return ((ARRAY_ELEMENT *)NULL);
 
+	INVALIDATE_LASTREF(a);
 	for (i = 0, ret = ae = element_forw(a->head); ae != a->head && i < n; ae = element_forw(ae), i++)
 		;
 	if (ae == a->head) {
@@ -216,7 +241,7 @@ int	n, flags;
 		element_index(ae) -= n;	/* renumber retained indices */
 
 	a->num_elements -= n;		/* modify bookkeeping information */
-	a->max_index -= n;
+	a->max_index = element_index(a->head->prev);
 
 	if (flags & AS_DISPOSE) {
 		for (ae = ret; ae; ) {
@@ -253,8 +278,10 @@ char	*s;
 		new = array_create_element(0, s);
 		ADD_BEFORE(ae, new);
 		a->num_elements++;
-		if (array_num_elements(a) == 1)		/* array was empty */
+		if (array_num_elements(a) == 1)	{	/* array was empty */
+			a->max_index = 0;
 			return 1;
+		}
 	}
 
 	/*
@@ -265,6 +292,7 @@ char	*s;
 
 	a->max_index = element_index(a->head->prev);
 
+	INVALIDATE_LASTREF(a);
 	return (a->num_elements);
 }
 
@@ -283,7 +311,7 @@ char	*v;
 	return (array_rshift (a, 1, v));
 }
 
-ARRAY	*
+ARRAY *
 array_quote(array)
 ARRAY	*array;
 {
@@ -300,6 +328,71 @@ ARRAY	*array;
 	return array;
 }
 
+ARRAY *
+array_quote_escapes(array)
+ARRAY	*array;
+{
+	ARRAY_ELEMENT	*a;
+	char	*t;
+
+	if (array == 0 || array_head(array) == 0 || array_empty(array))
+		return (ARRAY *)NULL;
+	for (a = element_forw(array->head); a != array->head; a = element_forw(a)) {
+		t = quote_escapes (a->value);
+		FREE(a->value);
+		a->value = t;
+	}
+	return array;
+}
+
+ARRAY *
+array_dequote(array)
+ARRAY	*array;
+{
+	ARRAY_ELEMENT	*a;
+	char	*t;
+
+	if (array == 0 || array_head(array) == 0 || array_empty(array))
+		return (ARRAY *)NULL;
+	for (a = element_forw(array->head); a != array->head; a = element_forw(a)) {
+		t = dequote_string (a->value);
+		FREE(a->value);
+		a->value = t;
+	}
+	return array;
+}
+
+ARRAY *
+array_dequote_escapes(array)
+ARRAY	*array;
+{
+	ARRAY_ELEMENT	*a;
+	char	*t;
+
+	if (array == 0 || array_head(array) == 0 || array_empty(array))
+		return (ARRAY *)NULL;
+	for (a = element_forw(array->head); a != array->head; a = element_forw(a)) {
+		t = dequote_escapes (a->value);
+		FREE(a->value);
+		a->value = t;
+	}
+	return array;
+}
+
+ARRAY *
+array_remove_quoted_nulls(array)
+ARRAY	*array;
+{
+	ARRAY_ELEMENT	*a;
+	char	*t;
+
+	if (array == 0 || array_head(array) == 0 || array_empty(array))
+		return (ARRAY *)NULL;
+	for (a = element_forw(array->head); a != array->head; a = element_forw(a))
+		a->value = remove_quoted_nulls (a->value);
+	return array;
+}
+
 /*
  * Return a string whose elements are the members of array A beginning at
  * index START and spanning NELEM members.  Null elements are counted.
@@ -311,9 +404,11 @@ ARRAY	*a;
 arrayind_t	start, nelem;
 int	starsub, quoted;
 {
+	ARRAY		*a2;
 	ARRAY_ELEMENT	*h, *p;
 	arrayind_t	i;
-	char		*ifs, sep[2];
+	char		*ifs, *sifs, *t;
+	int		slen;
 
 	p = a ? array_head (a) : 0;
 	if (p == 0 || array_empty (a) || start > array_max_index(a))
@@ -336,14 +431,36 @@ int	starsub, quoted;
 	for (i = 0, h = p; p != a->head && i < nelem; i++, p = element_forw(p))
 		;
 
-	if (starsub && (quoted & (Q_DOUBLE_QUOTES|Q_HERE_DOCUMENT))) {
-		ifs = getifs();
-		sep[0] = ifs ? *ifs : '\0';
-	} else
-		sep[0] = ' ';
-	sep[1] = '\0';
+	a2 = array_slice(a, h, p);
 
-	return (array_to_string_internal (h, p, sep, quoted));
+	if (quoted & (Q_DOUBLE_QUOTES|Q_HERE_DOCUMENT))
+		array_quote(a2);
+	else
+		array_quote_escapes(a2);
+
+	if (starsub && (quoted & (Q_DOUBLE_QUOTES|Q_HERE_DOCUMENT))) {
+		/* ${array[*]} */
+		array_remove_quoted_nulls (a2);
+		sifs = ifs_firstchar ((int *)NULL);
+		t = array_to_string (a2, sifs, 0);
+		free (sifs);
+	} else if (quoted & (Q_DOUBLE_QUOTES|Q_HERE_DOCUMENT)) {
+		/* ${array[@]} */
+		sifs = ifs_firstchar (&slen);
+		ifs = getifs ();
+		if (ifs == 0 || *ifs == 0) {
+			if (slen < 2)
+				sifs = xrealloc(sifs, 2);
+			sifs[0] = ' ';
+			sifs[1] = '\0';
+		}
+		t = array_to_string (a2, sifs, 0);
+		free (sifs);
+	} else
+		t = array_to_string (a2, " ", 0);
+	array_dispose(a2);
+
+	return t;
 }
 
 char *
@@ -354,7 +471,8 @@ int	mflags;
 {
 	ARRAY		*a2;
 	ARRAY_ELEMENT	*e;
-	char	*t, *ifs, sifs[2];
+	char	*t, *sifs, *ifs;
+	int	slen;
 
 	if (a == 0 || array_head(a) == 0 || array_empty(a))
 		return ((char *)NULL);
@@ -367,12 +485,27 @@ int	mflags;
 	}
 
 	if (mflags & MATCH_QUOTED)
-		array_quote (a2);
+		array_quote(a2);
+	else
+		array_quote_escapes(a2);
+
 	if (mflags & MATCH_STARSUB) {
-		ifs = getifs();
-		sifs[0] = ifs ? *ifs : '\0';
-		sifs[1] = '\0';
+		array_remove_quoted_nulls (a2);
+		sifs = ifs_firstchar((int *)NULL);
 		t = array_to_string (a2, sifs, 0);
+		free(sifs);
+	} else if (mflags & MATCH_QUOTED) {
+		/* ${array[@]} */
+		sifs = ifs_firstchar (&slen);
+		ifs = getifs ();
+		if (ifs == 0 || *ifs == 0) {
+			if (slen < 2)
+				sifs = xrealloc (sifs, 2);
+			sifs[0] = ' ';
+			sifs[1] = '\0';
+		}
+		t = array_to_string (a2, sifs, 0);
+		free(sifs);
 	} else
 		t = array_to_string (a2, " ", 0);
 	array_dispose (a2);
@@ -380,6 +513,56 @@ int	mflags;
 	return t;
 }
 
+char *
+array_modcase (a, pat, modop, mflags)
+ARRAY	*a;
+char	*pat;
+int	modop;
+int	mflags;
+{
+	ARRAY		*a2;
+	ARRAY_ELEMENT	*e;
+	char	*t, *sifs, *ifs;
+	int	slen;
+
+	if (a == 0 || array_head(a) == 0 || array_empty(a))
+		return ((char *)NULL);
+
+	a2 = array_copy(a);
+	for (e = element_forw(a2->head); e != a2->head; e = element_forw(e)) {
+		t = sh_modcase(element_value(e), pat, modop);
+		FREE(element_value(e));
+		e->value = t;
+	}
+
+	if (mflags & MATCH_QUOTED)
+		array_quote(a2);
+	else
+		array_quote_escapes(a2);
+
+	if (mflags & MATCH_STARSUB) {
+		array_remove_quoted_nulls (a2);
+		sifs = ifs_firstchar((int *)NULL);
+		t = array_to_string (a2, sifs, 0);
+		free(sifs);
+	} else if (mflags & MATCH_QUOTED) {
+		/* ${array[@]} */
+		sifs = ifs_firstchar (&slen);
+		ifs = getifs ();
+		if (ifs == 0 || *ifs == 0) {
+			if (slen < 2)
+				sifs = xrealloc (sifs, 2);
+			sifs[0] = ' ';
+			sifs[1] = '\0';
+		}
+		t = array_to_string (a2, sifs, 0);
+		free(sifs);
+	} else
+		t = array_to_string (a2, " ", 0);
+	array_dispose (a2);
+
+	return t;
+}
 /*
  * Allocate and return a new array element with index INDEX and value
  * VALUE.
@@ -441,6 +624,7 @@ char	*v;
 		ADD_BEFORE(a->head, new);
 		a->max_index = i;
 		a->num_elements++;
+		SET_LASTREF(a, new);
 		return(0);
 	}
 	/*
@@ -454,13 +638,16 @@ char	*v;
 			array_dispose_element(new);
 			free(element_value(ae));
 			ae->value = v ? savestring(v) : (char *)NULL;
+			SET_LASTREF(a, ae);
 			return(0);
 		} else if (element_index(ae) > i) {
 			ADD_BEFORE(ae, new);
 			a->num_elements++;
+			SET_LASTREF(a, new);
 			return(0);
 		}
 	}
+	INVALIDATE_LASTREF(a);
 	return (-1);		/* problem */
 }
 
@@ -484,6 +671,7 @@ arrayind_t	i;
 			a->num_elements--;
 			if (i == array_max_index(a))
 				a->max_index = element_index(ae->prev);
+			INVALIDATE_LASTREF(a);
 			return(ae);
 		}
 	return((ARRAY_ELEMENT *) NULL);
@@ -501,9 +689,19 @@ arrayind_t	i;
 
 	if (a == 0 || array_empty(a))
 		return((char *) NULL);
-	for (ae = element_forw(a->head); ae != a->head; ae = element_forw(ae))
-		if (element_index(ae) == i)
+	if (i > array_max_index(a))
+		return((char *)NULL);
+	/* Keep roving pointer into array to optimize sequential access */
+	if (lastref && IS_LASTREF(a))
+		ae = (i >= element_index(lastref)) ? lastref : element_forw(a->head);
+	else
+		ae = element_forw(a->head);
+	for ( ; ae != a->head; ae = element_forw(ae))
+		if (element_index(ae) == i) {
+			SET_LASTREF(a, ae);
 			return(element_value(ae));
+		}
+	UNSET_LASTREF();
 	return((char *) NULL);
 }
 
@@ -590,8 +788,8 @@ ARRAY	*a;
 }
 	
 /*
- * Return a string that is the concatenation of all the elements in A,
- * separated by SEP.
+ * Return a string that is the concatenation of the elements in A from START
+ * to END, separated by SEP.
  */
 static char *
 array_to_string_internal (start, end, sep, quoted)
@@ -655,7 +853,7 @@ int	quoted;
 		is = inttostr (element_index(ae), indstr, sizeof(indstr));
 		valstr = element_value (ae) ? sh_double_quote (element_value(ae))
 					    : (char *)NULL;
-		elen = STRLEN (indstr) + 8 + STRLEN (valstr);
+		elen = STRLEN (is) + 8 + STRLEN (valstr);
 		RESIZE_MALLOCED_BUFFER (result, rlen, (elen + 1), rsize, rsize);
 
 		result[rlen++] = '[';

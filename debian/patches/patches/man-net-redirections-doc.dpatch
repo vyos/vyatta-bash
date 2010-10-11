@@ -1,0 +1,31 @@
+#! /bin/sh -e
+
+if [ $# -eq 3 -a "$2" = '-d' ]; then
+    pdir="-d $3"
+elif [ $# -ne 1 ]; then
+    echo >&2 "`basename $0`: script expects -patch|-unpatch as argument"
+    exit 1
+fi
+case "$1" in
+    -patch) patch $pdir -f --no-backup-if-mismatch -p1 < $0;;
+    -unpatch) patch $pdir -f --no-backup-if-mismatch -R -p1 < $0;;
+    *)
+	echo >&2 "`basename $0`: script expects -patch|-unpatch as argument"
+	exit 1
+esac
+exit 0
+
+# DP: Document, that bash is configured using --disable-net-redirections.
+
+--- bash/doc/bashref.texi~	2005-09-09 22:08:10.865192816 +0200
++++ bash/doc/bashref.texi	2005-09-10 11:42:51.805867224 +0200
+@@ -2025,6 +2025,9 @@
+ is an integer port number or service name, Bash attempts to open a UDP
+ connection to the corresponding socket.
+ 
++NOTE: @code{Bash}, as packaged for Debian, does not support using the
++@file{/dev/tcp} and @file{/dev/udp} files.
++
+ @end table
+ 
+ A failure to open or create a file causes the redirection to fail.

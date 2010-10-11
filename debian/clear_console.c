@@ -148,7 +148,7 @@ int is_pseudo_tty(int fd)
   return 0;
 }
 
-int clear_console(int fd)
+void clear_console(int fd)
 {
   int num, tmp_num;
 #if defined(__linux__)
@@ -163,10 +163,10 @@ int clear_console(int fd)
     }
 
   if (is_pseudo_tty(STDIN_FILENO))
-    return 0;
+    return;
 
   if (!strcmp(getenv("TERM"), "screen"))
-      return 0;
+      return;
 
   /* get current vt */
 #if defined(__linux__)

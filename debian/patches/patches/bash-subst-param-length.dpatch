@@ -1,0 +1,32 @@
+#! /bin/sh -e
+
+if [ $# -eq 3 -a "$2" = '-d' ]; then
+    pdir="-d $3"
+elif [ $# -ne 1 ]; then
+    echo >&2 "`basename $0`: script expects -patch|-unpatch as argument"
+    exit 1
+fi
+case "$1" in
+    -patch) patch $pdir -f --no-backup-if-mismatch -p0 < $0;;
+    -unpatch) patch $pdir -f --no-backup-if-mismatch -R -p0 < $0;;
+    *)
+        echo >&2 "`basename $0`: script expects -patch|-unpatch as argument"
+        exit 1
+esac
+exit 0
+
+DP: ignore array subscript while determining variable name for length
+DP: substitution
+DP: (#345861)
+
+--- ../bash-3.1/subst.c     2006-01-14 01:12:02.000000000 +0100
++++ subst.c     2006-01-14 01:12:39.000000000 +0100
+@@ -5814,7 +5814,7 @@
+     {
+       t_index++;
+       free (name);
+-      temp1 = string_extract (string, &t_index, "#%:-=?+/}", 0);
++      temp1 = string_extract (string, &t_index, "#%:-=?+/}", SX_VARNAME);
+       name = (char *)xmalloc (3 + (strlen (temp1)));
+       *name = string[sindex];
+       if (string[sindex] == '!')

@@ -1,22 +1,22 @@
 /* sig.c - interface for shell signal handlers and signal initialization. */
 
-/* Copyright (C) 1994-2006 Free Software Foundation, Inc.
+/* Copyright (C) 1994-2009 Free Software Foundation, Inc.
 
    This file is part of GNU Bash, the Bourne Again SHell.
 
-   Bash is free software; you can redistribute it and/or modify it under
-   the terms of the GNU General Public License as published by the Free
-   Software Foundation; either version 2, or (at your option) any later
-   version.
+   Bash is free software: you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation, either version 3 of the License, or
+   (at your option) any later version.
 
-   Bash is distributed in the hope that it will be useful, but WITHOUT ANY
-   WARRANTY; without even the implied warranty of MERCHANTABILITY or
-   FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
-   for more details.
+   Bash is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
 
-   You should have received a copy of the GNU General Public License along
-   with Bash; see the file COPYING.  If not, write to the Free Software
-   Foundation, 59 Temple Place, Suite 330, Boston, MA 02111 USA. */
+   You should have received a copy of the GNU General Public License
+   along with Bash.  If not, see <http://www.gnu.org/licenses/>.
+*/
 
 #include "config.h"
 
@@ -56,6 +56,8 @@ extern int last_command_exit_value;
 extern int last_command_exit_signal;
 extern int return_catch_flag;
 extern int loop_level, continuing, breaking;
+extern int executing_list;
+extern int comsub_ignore_return;
 extern int parse_and_execute_level, shell_initialized;
 
 /* Non-zero after SIGINT. */
@@ -350,6 +352,25 @@ reset_terminating_signals ()
 #undef XSIG
 #undef XHANDLER
 
+/* Run some of the cleanups that should be performed when we run
+   jump_to_top_level from a builtin command context.  XXX - might want to
+   also call reset_parser here. */
+void
+top_level_cleanup ()
+{
+  /* Clean up string parser environment. */
+  while (parse_and_execute_level)
+    parse_and_execute_cleanup ();
+
+#if defined (PROCESS_SUBSTITUTION)
+  unlink_fifo_list ();
+#endif /* PROCESS_SUBSTITUTION */
+
+  run_unwind_protects ();
+  loop_level = continuing = breaking = 0;
+  executing_list = comsub_ignore_return = return_catch_flag = 0;
+}
+
 /* What to do when we've been interrupted, and it is safe to handle it. */
 void
 throw_to_top_level ()
@@ -372,7 +393,7 @@ throw_to_top_level ()
   /* Run any traps set on SIGINT. */
   run_interrupt_trap ();
 
-  /* Cleanup string parser environment. */
+  /* Clean up string parser environment. */
   while (parse_and_execute_level)
     parse_and_execute_cleanup ();
 
@@ -389,7 +410,7 @@ throw_to_top_level ()
 
 #if defined (READLINE)
   if (interactive)
-    bashline_reinitialize ();
+    bashline_reset ();
 #endif /* READLINE */
 
 #if defined (PROCESS_SUBSTITUTION)
@@ -398,7 +419,7 @@ throw_to_top_level ()
 
   run_unwind_protects ();
   loop_level = continuing = breaking = 0;
-  return_catch_flag = 0;
+  executing_list = comsub_ignore_return = return_catch_flag = 0;
 
   if (interactive && print_newline)
     {
@@ -427,8 +448,51 @@ sighandler
 termsig_sighandler (sig)
      int sig;
 {
+  /* If we get called twice with the same signal before handling it,
+     terminate right away. */
+  if (
+#ifdef SIGHUP
+    sig != SIGHUP &&
+#endif
+#ifdef SIGINT
+    sig != SIGINT &&
+#endif
+#ifdef SIGDANGER
+    sig != SIGDANGER &&
+#endif
+#ifdef SIGPIPE
+    sig != SIGPIPE &&
+#endif
+#ifdef SIGALRM
+    sig != SIGALRM &&
+#endif
+#ifdef SIGTERM
+    sig != SIGTERM &&
+#endif
+#ifdef SIGXCPU
+    sig != SIGXCPU &&
+#endif
+#ifdef SIGXFSZ
+    sig != SIGXFSZ &&
+#endif
+#ifdef SIGVTALRM
+    sig != SIGVTALRM &&
+#endif
+#ifdef SIGLOST
+    sig != SIGLOST &&
+#endif
+#ifdef SIGUSR1
+    sig != SIGUSR1 &&
+#endif
+#ifdef SIGUSR2
+   sig != SIGUSR2 &&
+#endif
+   sig == terminating_signal)
+    terminate_immediately = 1;
+
   terminating_signal = sig;
 
+  /* XXX - should this also trigger when interrupt_immediately is set? */
   if (terminate_immediately)
     {
       terminate_immediately = 0;
@@ -462,7 +526,7 @@ termsig_handler (sig)
 #endif /* HISTORY */
 
 #if defined (JOB_CONTROL)
-  if (interactive && sig == SIGHUP)
+  if (sig == SIGHUP && (interactive || (subshell_environment & (SUBSHELL_COMSUB|SUBSHELL_PROCSUB))))
     hangup_all_jobs ();
   end_job_control ();
 #endif /* JOB_CONTROL */
@@ -470,6 +534,10 @@ termsig_handler (sig)
 #if defined (PROCESS_SUBSTITUTION)
   unlink_fifo_list ();
 #endif /* PROCESS_SUBSTITUTION */
+
+  /* Reset execution context */
+  loop_level = continuing = breaking = 0;
+  executing_list = comsub_ignore_return = return_catch_flag = 0;
 
   run_exit_trap ();
   set_signal_handler (sig, SIG_DFL);
@@ -493,6 +561,7 @@ sigint_sighandler (sig)
   if (interrupt_immediately)
     {
       interrupt_immediately = 0;
+      last_command_exit_value = 128 + sig;
       throw_to_top_level ();
     }
 

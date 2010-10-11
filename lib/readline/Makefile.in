@@ -4,21 +4,20 @@
 #								            #
 #############################################################################
 
-# Copyright (C) 1994-2005 Free Software Foundation, Inc.
+# Copyright (C) 1994-2009 Free Software Foundation, Inc.
 
-# This program is free software; you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; either version 2, or (at your option)
-# any later version.
+#   This program is free software: you can redistribute it and/or modify
+#   it under the terms of the GNU General Public License as published by
+#   the Free Software Foundation, either version 3 of the License, or
+#   (at your option) any later version.
 
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+#   This program is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty of
+#   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#   GNU General Public License for more details.
 
-# You should have received a copy of the GNU General Public License
-# along with this program; if not, write to the Free Software
-# Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111 USA.
+#   You should have received a copy of the GNU General Public License
+#   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 PACKAGE = @PACKAGE_NAME@
 VERSION = @PACKAGE_VERSION@
@@ -32,6 +31,8 @@ srcdir = @srcdir@
 VPATH = .:@srcdir@
 topdir = @top_srcdir@
 BUILD_DIR = @BUILD_DIR@
+
+datarootdir = @datarootdir@
 
 INSTALL = @INSTALL@
 INSTALL_PROGRAM = @INSTALL_PROGRAM@
@@ -98,6 +99,12 @@ OBJECTS = readline.o vi_mode.o funmap.o keymaps.o parens.o search.o \
 	  util.o kill.o undo.o macro.o input.o callback.o terminal.o \
 	  text.o nls.o misc.o $(HISTOBJ) $(TILDEOBJ) xmalloc.o compat.o
 
+# The texinfo files which document this library.
+DOCSOURCE = doc/rlman.texinfo doc/rltech.texinfo doc/rluser.texinfo
+DOCOBJECT = doc/readline.dvi
+DOCSUPPORT = doc/Makefile
+DOCUMENTATION = $(DOCSOURCE) $(DOCOBJECT) $(DOCSUPPORT)
+
 SUPPORT = Makefile ChangeLog $(DOCSUPPORT) examples/[-a-z.]*
 
 SOURCES  = $(CSOURCES) $(HSOURCES) $(DOCSOURCE)
@@ -123,6 +130,7 @@ libhistory.a: $(HISTOBJ) xmalloc.o
 
 documentation: force
 	test -d doc || mkdir doc
+	-( cd doc && $(MAKE) $(MFLAGS) )
 
 # Since tilde.c is shared between readline and bash, make sure we compile
 # it with the right flags when it's built as part of readline
@@ -146,10 +154,13 @@ tags:	force
 
 clean:	force
 	$(RM) $(OBJECTS) *.a
+	-( cd doc && $(MAKE) $(MFLAGS) $@ )
 
 mostlyclean: clean
+	-( cd doc && $(MAKE) $(MFLAGS) $@ )
 
 distclean maintainer-clean: clean
+	-( cd doc && $(MAKE) $(MFLAGS) $@ )
 	$(RM) Makefile
 	$(RM) TAGS tags
 

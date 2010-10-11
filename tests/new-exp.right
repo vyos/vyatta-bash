@@ -430,7 +430,7 @@ Case05---3---A:B:C---
 Case06---1---A B C::---
 Case07---3---A:B:C---
 Case08---3---A:B:C---
-./new-exp.tests: line 506: /${$(($#-1))}: bad substitution
+./new-exp.tests: line 506: ${$(($#-1))}: bad substitution
 argv[1] = <a>
 argv[2] = <b>
 argv[3] = <c>
@@ -496,12 +496,16 @@ one
 123456789
 9
 9
+4, A B C D
+2, C D
 h
 h
 --blah
 --blah
 lah
 lah
+abcde abcfg abchi
+foode foofg foohi
 argv[1] = <>
 argv[1] = <+>
 argv[1] = <+^?>
@@ -515,4 +519,24 @@ argv[1] = <>
 argv[1] = <>
 argv[1] = <>
 argv[1] = <12>
-./new-exp.tests: line 560: ABXD: parameter unset
+argv[1] = <>
+argv[1] = <>
+argv[1] = </tmp/test/TEST>
+foo is a function
+foo () 
+{ 
+    echo < <(cat x1)
+}
+foo () 
+{ 
+    echo < <(cat x1)
+}
+bar () { echo < <(cat x1) }
+bar is a function
+bar () 
+{ 
+    echo < <(cat x1)
+}
+argv[1] = </>
+argv[1] = </>
+./new-exp.tests: line 576: ABXD: parameter unset

@@ -1,0 +1,48 @@
+#! /bin/sh -e
+
+if [ $# -eq 3 -a "$2" = '-d' ]; then
+    pdir="-d $3"
+elif [ $# -ne 1 ]; then
+    echo >&2 "`basename $0`: script expects -patch|-unpatch as argument"
+    exit 1
+fi
+case "$1" in
+    -patch) patch $pdir -f --no-backup-if-mismatch -p1 < $0;;
+    -unpatch) patch $pdir -f --no-backup-if-mismatch -R -p1 < $0;;
+    *)
+	echo >&2 "`basename $0`: script expects -patch|-unpatch as argument"
+	exit 1
+esac
+exit 0
+
+# DP: Use `command -v editor`, as an editor, if available.
+
+--- bash/builtins/fc.def~	2005-10-13 18:11:24.798452832 +0200
++++ bash/builtins/fc.def	2005-10-13 19:36:11.956087320 +0200
+@@ -156,11 +156,11 @@
+ #endif
+ 
+ /* String to execute on a file that we want to edit. */
+-#define FC_EDIT_COMMAND "${FCEDIT:-${EDITOR:-vi}}"
++#define FC_EDIT_COMMAND "${FCEDIT:-${EDITOR:-$(command -v editor || echo vi)}}"
+ #if defined (STRICT_POSIX)
+ #  define POSIX_FC_EDIT_COMMAND "${FCEDIT:-ed}"
+ #else
+-#  define POSIX_FC_EDIT_COMMAND "${FCEDIT:-${EDITOR:-ed}}"
++#  define POSIX_FC_EDIT_COMMAND "${FCEDIT:-${EDITOR:-$(command -v editor || echo ed)}}"
+ #endif
+ 
+ int
+--- bash/bashline.c~	2005-10-13 18:11:24.827448424 +0200
++++ bash/bashline.c	2005-10-13 19:37:35.382404592 +0200
+@@ -800,8 +800,8 @@
+    command being entered (if no explicit argument is given), otherwise on
+    a command from the history file. */
+ 
+-#define VI_EDIT_COMMAND		"fc -e \"${VISUAL:-${EDITOR:-vi}}\""
+-#define EMACS_EDIT_COMMAND	"fc -e \"${VISUAL:-${EDITOR:-emacs}}\""
++#define VI_EDIT_COMMAND		"fc -e \"${VISUAL:-${EDITOR:-$(command -v editor || echo vi)}}\""
++#define EMACS_EDIT_COMMAND	"fc -e \"${VISUAL:-${EDITOR:-$(command -v editor || echo emacs)}}\""
+ #define POSIX_VI_EDIT_COMMAND	"fc -e vi"
+ 
+ static int

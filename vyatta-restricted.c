@@ -19,6 +19,8 @@
    This code was originally developed by Vyatta, Inc.
    Portions created by Vyatta are Copyright (C) 2007 Vyatta, Inc. */
 
+#include <unistd.h>
+
 #include "shell.h"
 #include "bashhist.h"
 #include "vyatta-restricted.h"

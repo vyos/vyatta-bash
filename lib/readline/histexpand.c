@@ -1,24 +1,23 @@
 /* histexpand.c -- history expansion. */
 
-/* Copyright (C) 1989-2004 Free Software Foundation, Inc.
+/* Copyright (C) 1989-2009 Free Software Foundation, Inc.
 
-   This file contains the GNU History Library (the Library), a set of
+   This file contains the GNU History Library (History), a set of
    routines for managing the text of previously typed lines.
 
-   The Library is free software; you can redistribute it and/or modify
+   History is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2, or (at your option)
-   any later version.
+   the Free Software Foundation, either version 3 of the License, or
+   (at your option) any later version.
 
-   The Library is distributed in the hope that it will be useful, but
-   WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-   General Public License for more details.
+   History is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
 
-   The GNU General Public License is often shipped with GNU software, and
-   is generally kept in a file called COPYING or LICENSE.  If you do not
-   have a copy of the license, write to the Free Software Foundation,
-   59 Temple Place, Suite 330, Boston, MA 02111 USA. */
+   You should have received a copy of the GNU General Public License
+   along with History.  If not, see <http://www.gnu.org/licenses/>.
+*/
 
 #define READLINE_LIBRARY
 
@@ -64,9 +63,11 @@ static int subst_lhs_len;
 static int subst_rhs_len;
 
 static char *get_history_word_specifier PARAMS((char *, char *, int *));
-static char *history_find_word PARAMS((char *, int));
 static int history_tokenize_word PARAMS((const char *, int));
+static char **history_tokenize_internal PARAMS((const char *, int, int *));
 static char *history_substring PARAMS((const char *, int, int));
+static void freewords PARAMS((char **, int));
+static char *history_find_word PARAMS((char *, int));
 
 static char *quote_breaks PARAMS((char *));
 
@@ -304,16 +305,20 @@ get_history_event (string, caller_index, delimiting_quote)
 /* Extract the contents of STRING as if it is enclosed in single quotes.
    SINDEX, when passed in, is the offset of the character immediately
    following the opening single quote; on exit, SINDEX is left pointing
-   to the closing single quote. */
+   to the closing single quote.  FLAGS currently used to allow backslash
+   to escape a single quote (e.g., for bash $'...'). */
 static void
-hist_string_extract_single_quoted (string, sindex)
+hist_string_extract_single_quoted (string, sindex, flags)
      char *string;
-     int *sindex;
+     int *sindex, flags;
 {
   register int i;
 
   for (i = *sindex; string[i] && string[i] != '\''; i++)
-    ;
+    {
+      if ((flags & 1) && string[i] == '\\' && string[i+1])
+        i++;
+    }
 
   *sindex = i;
 }
@@ -923,7 +928,7 @@ history_expand (hstring, output)
      char **output;
 {
   register int j;
-  int i, r, l, passc, cc, modified, eindex, only_printing, dquote;
+  int i, r, l, passc, cc, modified, eindex, only_printing, dquote, flag;
   char *string;
 
   /* The output string, and its length. */
@@ -1015,7 +1020,7 @@ history_expand (hstring, output)
 	    }
 	  else if (string[i] == history_expansion_char)
 	    {
-	      if (!cc || member (cc, history_no_expand_chars))
+	      if (cc == 0 || member (cc, history_no_expand_chars))
 		continue;
 	      /* If the calling application has set
 		 history_inhibit_expansion_function to a function that checks
@@ -1043,8 +1048,9 @@ history_expand (hstring, output)
 	  else if (dquote == 0 && history_quotes_inhibit_expansion && string[i] == '\'')
 	    {
 	      /* If this is bash, single quotes inhibit history expansion. */
+	      flag = (i > 0 && string[i - 1] == '$');
 	      i++;
-	      hist_string_extract_single_quoted (string, &i);
+	      hist_string_extract_single_quoted (string, &i, flag);
 	    }
 	  else if (history_quotes_inhibit_expansion && string[i] == '\\')
 	    {
@@ -1095,7 +1101,7 @@ history_expand (hstring, output)
 	  if (strlen (mb) > 1)
 	    {
 	      ADD_STRING (mb);
-	      break;
+	      continue;
 	    }
 	}
 #endif /* HANDLE_MULTIBYTE */
@@ -1129,8 +1135,9 @@ history_expand (hstring, output)
 	      {
 		int quote, slen;
 
+		flag = (i > 0 && string[i - 1] == '$');
 		quote = i++;
-		hist_string_extract_single_quoted (string, &i);
+		hist_string_extract_single_quoted (string, &i, flag);
 
 		slen = i - quote + 2;
 		temp = (char *)xmalloc (slen);
@@ -1163,7 +1170,8 @@ history_expand (hstring, output)
 	  /* If the history_expansion_char is followed by one of the
 	     characters in history_no_expand_chars, then it is not a
 	     candidate for expansion of any kind. */
-	  if (member (cc, history_no_expand_chars))
+	  if (cc == 0 || member (cc, history_no_expand_chars) ||
+	  		 (history_inhibit_expansion_function && (*history_inhibit_expansion_function) (string, i)))
 	    {
 	      ADD_CHAR (string[i]);
 	      break;
@@ -1433,17 +1441,21 @@ history_tokenize_word (string, ind)
 	  i += 2;
 	  return i;
 	}
-      else
+      else if ((peek == '&' && (string[i] == '>' || string[i] == '<')) ||
+		(peek == '>' && string[i] == '&') ||
+		(peek == '(' && (string[i] == '>' || string[i] == '<')) || /* ) */
+		(peek == '(' && string[i] == '$')) /* ) */
 	{
-	  if ((peek == '&' && (string[i] == '>' || string[i] == '<')) ||
-	      (peek == '>' && string[i] == '&') ||
-	      (peek == '(' && (string[i] == '>' || string[i] == '<')) || /* ) */
-	      (peek == '(' && string[i] == '$')) /* ) */
-	    {
-	      i += 2;
-	      return i;
-	    }
+	  i += 2;
+	  return i;
 	}
+#if 0
+      else if (peek == '\'' && string[i] == '$')
+        {
+	  i += 2;	/* XXX */
+	  return i;
+        }
+#endif
 
       if (string[i] != '$')
 	{
@@ -1569,6 +1581,18 @@ history_tokenize (string)
   return (history_tokenize_internal (string, -1, (int *)NULL));
 }
 
+/* Free members of WORDS from START to an empty string */
+static void
+freewords (words, start)
+     char **words;
+     int start;
+{
+  register int i;
+
+  for (i = start; words[i]; i++)
+    free (words[i]);
+}
+
 /* Find and return the word which contains the character at index IND
    in the history line LINE.  Used to save the word matched by the
    last history !?string? search. */
@@ -1582,12 +1606,16 @@ history_find_word (line, ind)
 
   words = history_tokenize_internal (line, ind, &wind);
   if (wind == -1 || words == 0)
-    return ((char *)NULL);
+    {
+      if (words)
+	freewords (words, 0);
+      FREE (words);
+      return ((char *)NULL);
+    }
   s = words[wind];
   for (i = 0; i < wind; i++)
     free (words[i]);
-  for (i = wind + 1; words[i]; i++)
-    free (words[i]);
+  freewords (words, wind + 1);
   free (words);
   return s;
 }

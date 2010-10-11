@@ -1,0 +1,31 @@
+#! /bin/sh -e
+
+if [ $# -eq 3 -a "$2" = '-d' ]; then
+    pdir="-d $3"
+elif [ $# -ne 1 ]; then
+    echo >&2 "`basename $0`: script expects -patch|-unpatch as argument"
+    exit 1
+fi
+case "$1" in
+    -patch) patch $pdir -f --no-backup-if-mismatch -p1 < $0;;
+    -unpatch) patch $pdir -f --no-backup-if-mismatch -R -p1 < $0;;
+    *)
+	echo >&2 "`basename $0`: script expects -patch|-unpatch as argument"
+	exit 1
+esac
+exit 0
+
+# DP: Document, that bash is configured using --disable-net-redirections.
+
+--- bash/doc/bash.1~	2005-09-09 22:08:10.833197680 +0200
++++ bash/doc/bash.1	2005-09-10 11:47:57.694365104 +0200
+@@ -3033,6 +3033,9 @@
+ .PD
+ .RE
+ .PP
++\fBNOTE:\fP Bash, as packaged for Debian, does \fBnot\fP support using
++the \fB/dev/tcp\fP and \fB/dev/udp\fP files.
++.PP
+ A failure to open or create a file causes the redirection to fail.
+ .PP
+ Redirections using file descriptors greater than 9 should be used with

@@ -1,22 +1,22 @@
 /* shell.h -- The data structures used by the shell */
 
-/* Copyright (C) 1993-2002 Free Software Foundation, Inc.
+/* Copyright (C) 1993-2009 Free Software Foundation, Inc.
 
    This file is part of GNU Bash, the Bourne Again SHell.
 
-   Bash is free software; you can redistribute it and/or modify it under
-   the terms of the GNU General Public License as published by the Free
-   Software Foundation; either version 2, or (at your option) any later
-   version.
+   Bash is free software: you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation, either version 3 of the License, or
+   (at your option) any later version.
 
-   Bash is distributed in the hope that it will be useful, but WITHOUT ANY
-   WARRANTY; without even the implied warranty of MERCHANTABILITY or
-   FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
-   for more details.
+   Bash is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
 
-   You should have received a copy of the GNU General Public License along
-   with Bash; see the file COPYING.  If not, write to the Free Software
-   Foundation, 59 Temple Place, Suite 330, Boston, MA 02111 USA. */
+   You should have received a copy of the GNU General Public License
+   along with Bash.  If not, see <http://www.gnu.org/licenses/>.
+*/
 
 #ifdef HAVE_CONFIG_H
 #include "config.h"
@@ -56,6 +56,8 @@ extern int EOF_Reached;
 #define EX_BADUSAGE	2
 
 /* Special exit statuses used by the shell, internally and externally. */
+#define EX_RETRYFAIL	124
+#define EX_WEXPCOMSUB	125
 #define EX_BINARY_FILE	126
 #define EX_NOEXEC	126
 #define EX_NOINPUT	126
@@ -89,6 +91,8 @@ extern int debugging_mode;
 extern int executing, login_shell;
 extern int interactive, interactive_shell;
 extern int startup_state;
+extern int subshell_environment;
+extern int shell_compatibility_level;
 
 /* Structure to pass around that holds a bitmap of file descriptors
    to close, and the size of that structure.  Used in execute_cmd.c. */

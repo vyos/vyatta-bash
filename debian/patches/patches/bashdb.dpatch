@@ -1,0 +1,56 @@
+#! /bin/sh -e
+
+dir=.
+if [ $# -eq 3 -a "$2" = '-d' ]; then
+    pdir="-d $3"
+    dir=$3
+elif [ $# -ne 1 ]; then
+    echo >&2 "`basename $0`: script expects -patch|-unpatch as argument"
+    exit 1
+fi
+case "$1" in
+    -patch)
+	patch $pdir -f --no-backup-if-mismatch -p1 < $0
+	rm -f $dir/aclocal.m4
+	rm -f $dir/configure
+	rm -f $dir/doc/bashref.info
+	rm -f $dir/examples/bashdb/bashdb.el
+	rm -f $dir/lib/readline/doc/Makefile
+	rm -f $dir/parser-built
+	rm -f $dir/pathnames.h
+	rm -f $dir/y.tab.[ch]
+	(cd $dir && aclocal -I . -I debugger)
+	(cd $dir && autoconf)
+	for i in config.guess config.sub elisp-comp install-sh \
+		 missing mkinstalldirs
+	do
+	    cp -p /usr/share/automake-1.7/$i $dir/debugger/
+	done
+	for i in mdate-sh texinfo.tex; do
+	    cp -p /usr/share/automake-1.7/$i $dir/debugger/doc/
+	done
+	(cd $dir/debugger && aclocal -I ..)
+	cp -p $dir/debugger/elisp-comp $dir/debugger/emacs/.
+	(cd $dir/debugger && automake)
+	(cd $dir/debugger && autoconf)
+	;;
+    -unpatch)
+	patch $pdir -f --no-backup-if-mismatch -R -p1 < $0
+	;;
+    *)
+	echo >&2 "`basename $0`: script expects -patch|-unpatch as argument"
+	exit 1
+esac
+exit 0
+
+# how to construct this file:
+# - unpack the upstream bash source
+# - unpack the bashdb source
+# - apply bash the seven bash upstream patches
+# - diff -ur --unidirectional-new-file \
+         --exclude CVS --exclude=.cvsignore --exclude=/db/ \
+#        bash-2.05b bashdb
+
+# DP: bashdb changes
+
+diff -ur --unidirectional-new-file --exclude CVS --exclude=.cvsignore bash-2.05b/ChangeLog cvs/ChangeLog

@@ -23,7 +23,7 @@ VERSION		:= 3.3
 with_gfdl	= no
 
 CC	= gcc
-CFLAGS	= -g -O2
+CFLAGS	= -g -O2 -Wall
 SHELL	= bash
 YACC	= bison -y
 

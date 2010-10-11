@@ -1,0 +1,33 @@
+#! /bin/sh -e
+
+if [ $# -eq 3 -a "$2" = '-d' ]; then
+    pdir="-d $3"
+elif [ $# -ne 1 ]; then
+    echo >&2 "`basename $0`: script expects -patch|-unpatch as argument"
+    exit 1
+fi
+case "$1" in
+    -patch) patch $pdir -f --no-backup-if-mismatch -p1 < $0;;
+    -unpatch) patch $pdir -f --no-backup-if-mismatch -R -p1 < $0;;
+    *)
+	echo >&2 "`basename $0`: script expects -patch|-unpatch as argument"
+	exit 1
+esac
+exit 0
+
+# DP: bash(1): mention quoting when assigning to FIGNORE
+
+diff -urb bash.orig/doc/bash.1 bash/doc/bash.1
+--- bash.orig/doc/bash.1	2003-09-25 21:42:45.000000000 +0200
++++ bash/doc/bash.1	2003-09-28 00:25:21.000000000 +0200
+@@ -1584,7 +1584,9 @@
+ is excluded from the list of matched filenames.
+ A sample value is
+ .if t \f(CW".o:~"\fP.
+-.if n ".o:~".
++.if n ".o:~"
++(Quoting is needed when assigning a value to this variable,
++which contains tildes).
+ .TP
+ .B GLOBIGNORE
+ A colon-separated list of patterns defining the set of filenames to

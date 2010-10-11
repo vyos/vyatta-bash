@@ -1,24 +1,23 @@
 /* bind.c -- key binding and startup file support for the readline library. */
 
-/* Copyright (C) 1987-2006 Free Software Foundation, Inc.
+/* Copyright (C) 1987-2009 Free Software Foundation, Inc.
 
-   This file is part of the GNU Readline Library, a library for
-   reading lines of text with interactive input and history editing.
+   This file is part of the GNU Readline Library (Readline), a library
+   for reading lines of text with interactive input and history editing.
 
-   The GNU Readline Library is free software; you can redistribute it
-   and/or modify it under the terms of the GNU General Public License
-   as published by the Free Software Foundation; either version 2, or
+   Readline is free software: you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation, either version 3 of the License, or
    (at your option) any later version.
 
-   The GNU Readline Library is distributed in the hope that it will be
-   useful, but WITHOUT ANY WARRANTY; without even the implied warranty
-   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   Readline is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
    GNU General Public License for more details.
 
-   The GNU General Public License is often shipped with GNU software, and
-   is generally kept in a file called COPYING or LICENSE.  If you do not
-   have a copy of the license, write to the Free Software Foundation,
-   59 Temple Place, Suite 330, Boston, MA 02111 USA. */
+   You should have received a copy of the GNU General Public License
+   along with Readline.  If not, see <http://www.gnu.org/licenses/>.
+*/
 
 #define READLINE_LIBRARY
 
@@ -80,7 +79,7 @@ static int glean_key_from_name PARAMS((char *));
 static int find_boolean_var PARAMS((const char *));
 
 static char *_rl_get_string_variable_value PARAMS((const char *));
-static int substring_member_of_array PARAMS((char *, const char **));
+static int substring_member_of_array PARAMS((const char *, const char * const *));
 
 static int currently_reading_init_file;
 
@@ -317,7 +316,7 @@ rl_macro_bind (keyseq, macro, map)
 
   if (rl_translate_keyseq (macro, macro_keys, &macro_keys_len))
     {
-      free (macro_keys);
+      xfree (macro_keys);
       return -1;
     }
   rl_generic_bind (ISMACR, keyseq, macro_keys, map);
@@ -347,7 +346,7 @@ rl_generic_bind (type, keyseq, data, map)
   if (keyseq == 0 || *keyseq == 0)
     {
       if (type == ISMACR)
-	free (data);
+	xfree (data);
       return -1;
     }
 
@@ -358,7 +357,7 @@ rl_generic_bind (type, keyseq, data, map)
      KEYS into KEYS_LEN. */
   if (rl_translate_keyseq (keyseq, keys, &keys_len))
     {
-      free (keys);
+      xfree (keys);
       return -1;
     }
 
@@ -371,7 +370,7 @@ rl_generic_bind (type, keyseq, data, map)
       ic = uc;
       if (ic < 0 || ic >= KEYMAP_SIZE)
         {
-          free (keys);
+          xfree (keys);
 	  return -1;
         }
 
@@ -414,11 +413,18 @@ rl_generic_bind (type, keyseq, data, map)
       else
 	{
 	  if (map[ic].type == ISMACR)
-	    free ((char *)map[ic].function);
+	    xfree ((char *)map[ic].function);
 	  else if (map[ic].type == ISKMAP)
 	    {
 	      map = FUNCTION_TO_KEYMAP (map, ic);
 	      ic = ANYOTHERKEY;
+	      /* If we're trying to override a keymap with a null function
+		 (e.g., trying to unbind it), we can't use a null pointer
+		 here because that's indistinguishable from having not been
+		 overridden.  We use a special bindable function that does
+		 nothing. */
+	      if (type == ISFUNC && data == 0)
+		data = (char *)_rl_null_function;
 	    }
 
 	  map[ic].function = KEYMAP_TO_FUNCTION (data);
@@ -427,7 +433,7 @@ rl_generic_bind (type, keyseq, data, map)
 
       rl_binding_keymap = map;
     }
-  free (keys);
+  xfree (keys);
   return 0;
 }
 
@@ -752,9 +758,6 @@ rl_function_of_keyseq (keyseq, map, type)
 /* The last key bindings file read. */
 static char *last_readline_init_file = (char *)NULL;
 
-/* Flag to read system init file */
-static int read_system_init_file = 0;
-
 /* The file we're currently reading key bindings from. */
 static const char *current_readline_init_file;
 static int current_readline_init_include_level;
@@ -796,9 +799,11 @@ _rl_read_file (filename, sizep)
 
   if (i < 0)
     {
-      free (buffer);
+      xfree (buffer);
       return ((char *)NULL);
     }
+
+  RL_CHECK_SIGNALS ();
 
   buffer[i] = '\0';
   if (sizep)
@@ -866,8 +871,9 @@ _rl_read_init_file (filename, include_level)
 
   openname = tilde_expand (filename);
   buffer = _rl_read_file (openname, &file_size);
-  free (openname);
+  xfree (openname);
 
+  RL_CHECK_SIGNALS ();
   if (buffer == 0)
     return (errno);
   
@@ -914,7 +920,7 @@ _rl_read_init_file (filename, include_level)
       current_readline_init_lineno++;
     }
 
-  free (buffer);
+  xfree (buffer);
   currently_reading_init_file = 0;
   return (0);
 }
@@ -924,10 +930,10 @@ _rl_init_file_error (msg)
      const char *msg;
 {
   if (currently_reading_init_file)
-    fprintf (stderr, "readline: %s: line %d: %s\n", current_readline_init_file,
+    _rl_errmsg ("%s: line %d: %s\n", current_readline_init_file,
 		     current_readline_init_lineno, msg);
   else
-    fprintf (stderr, "readline: %s\n", msg);
+    _rl_errmsg ("%s", msg);
 }
 
 /* **************************************************************** */
@@ -939,11 +945,11 @@ _rl_init_file_error (msg)
 typedef int _rl_parser_func_t PARAMS((char *));
 
 /* Things that mean `Control'. */
-const char *_rl_possible_control_prefixes[] = {
+const char * const _rl_possible_control_prefixes[] = {
   "Control-", "C-", "CTRL-", (const char *)NULL
 };
 
-const char *_rl_possible_meta_prefixes[] = {
+const char * const _rl_possible_meta_prefixes[] = {
   "Meta", "M-", (const char *)NULL
 };
 
@@ -1005,7 +1011,7 @@ parser_if (args)
 	 `$if term=sun-cmd' into their .inputrc. */
       _rl_parsing_conditionalized_out = _rl_stricmp (args + 5, tname) &&
 					_rl_stricmp (args + 5, rl_terminal_name);
-      free (tname);
+      xfree (tname);
     }
 #if defined (VI_MODE)
   else if (_rl_strnicmp (args, "mode=", 5) == 0)
@@ -1102,8 +1108,8 @@ parser_include (args)
 }
   
 /* Associate textual names with actual functions. */
-static struct {
-  const char *name;
+static const struct {
+  const char * const name;
   _rl_parser_func_t *function;
 } parser_directives [] = {
   { "if", parser_if },
@@ -1355,7 +1361,7 @@ rl_parse_and_bind (string)
       else
 	rl_bind_keyseq (seq, rl_named_function (funname));
 
-      free (seq);
+      xfree (seq);
       return 0;
     }
 
@@ -1409,8 +1415,8 @@ rl_parse_and_bind (string)
 
 #define V_SPECIAL	0x1
 
-static struct {
-  const char *name;
+static const struct {
+  const char * const name;
   int *value;
   int flags;
 } boolean_varlist [] = {
@@ -1420,7 +1426,9 @@ static struct {
   { "completion-ignore-case",	&_rl_completion_case_fold,	0 },
   { "convert-meta",		&_rl_convert_meta_chars_to_ascii, 0 },
   { "disable-completion",	&rl_inhibit_completion,		0 },
+  { "echo-control-characters",	&_rl_echo_control_chars,	0 },
   { "enable-keypad",		&_rl_enable_keypad,		0 },
+  { "enable-meta-key",		&_rl_enable_meta,		0 },
   { "expand-tilde",		&rl_complete_with_tilde_expansion, 0 },
   { "history-preserve-point",	&_rl_history_preserve_point,	0 },
   { "horizontal-scroll-mode",	&_rl_horizontal_scroll_mode,	0 },
@@ -1434,8 +1442,10 @@ static struct {
   { "page-completions",		&_rl_page_completions,		0 },
   { "prefer-visible-bell",	&_rl_prefer_visible_bell,	V_SPECIAL },
   { "print-completions-horizontally", &_rl_print_completions_horizontally, 0 },
+  { "revert-all-at-newline",	&_rl_revert_all_at_newline,	0 },
   { "show-all-if-ambiguous",	&_rl_complete_show_all,		0 },
   { "show-all-if-unmodified",	&_rl_complete_show_unmodified,	0 },
+  { "skip-completed-text",	&_rl_skip_completed_text,	0 },
 #if defined (VISIBLE_STATS)
   { "visible-stats",		&rl_visible_stats,		0 },
 #endif /* VISIBLE_STATS */
@@ -1492,20 +1502,24 @@ typedef int _rl_sv_func_t PARAMS((const char *));
 /* Forward declarations */
 static int sv_bell_style PARAMS((const char *));
 static int sv_combegin PARAMS((const char *));
+static int sv_dispprefix PARAMS((const char *));
 static int sv_compquery PARAMS((const char *));
 static int sv_editmode PARAMS((const char *));
+static int sv_histsize PARAMS((const char *));
 static int sv_isrchterm PARAMS((const char *));
 static int sv_keymap PARAMS((const char *));
 
-static struct {
-  const char *name;
+static const struct {
+  const char * const name;
   int flags;
   _rl_sv_func_t *set_func;
 } string_varlist[] = {
   { "bell-style",	V_STRING,	sv_bell_style },
   { "comment-begin",	V_STRING,	sv_combegin },
+  { "completion-prefix-display-length", V_INT,	sv_dispprefix },
   { "completion-query-items", V_INT,	sv_compquery },
   { "editing-mode",	V_STRING,	sv_editmode },
+  { "history-size",	V_INT,		sv_histsize },
   { "isearch-terminators", V_STRING,	sv_isrchterm },
   { "keymap",		V_STRING,	sv_keymap },
   { (char *)NULL,	0 }
@@ -1617,6 +1631,22 @@ sv_combegin (value)
 }
 
 static int
+sv_dispprefix (value)
+     const char *value;
+{
+  int nval = 0;
+
+  if (value && *value)
+    {
+      nval = atoi (value);
+      if (nval < 0)
+	nval = 0;
+    }
+  _rl_completion_prefix_display_length = nval;
+  return 0;
+}
+
+static int
 sv_compquery (value)
      const char *value;
 {
@@ -1629,6 +1659,22 @@ sv_compquery (value)
 	nval = 0;
     }
   rl_completion_query_items = nval;
+  return 0;
+}
+
+static int
+sv_histsize (value)
+     const char *value;
+{
+  int nval = 500;
+
+  if (value && *value)
+    {
+      nval = atoi (value);
+      if (nval < 0)
+	return 1;
+    }
+  stifle_history (nval);
   return 0;
 }
 
@@ -1696,7 +1742,7 @@ sv_isrchterm (value)
   rl_translate_keyseq (v + beg, _rl_isearch_terminators, &end);
   _rl_isearch_terminators[end] = '\0';
 
-  free (v);
+  xfree (v);
   return 0;
 }
       
@@ -1704,11 +1750,11 @@ sv_isrchterm (value)
    For example, `Space' returns ' '. */
 
 typedef struct {
-  const char *name;
+  const char * const name;
   int value;
 } assoc_list;
 
-static assoc_list name_key_alist[] = {
+static const assoc_list name_key_alist[] = {
   { "DEL", 0x7f },
   { "ESC", '\033' },
   { "Escape", '\033' },
@@ -1737,8 +1783,8 @@ glean_key_from_name (name)
 }
 
 /* Auxiliary functions to manage keymaps. */
-static struct {
-  const char *name;
+static const struct {
+  const char * const name;
   Keymap map;
 } keymap_names[] = {
   { "emacs", emacs_standard_keymap },
@@ -1841,7 +1887,7 @@ rl_list_funmap_names ()
   for (i = 0; funmap_names[i]; i++)
     fprintf (rl_outstream, "%s\n", funmap_names[i]);
 
-  free (funmap_names);
+  xfree (funmap_names);
 }
 
 static char *
@@ -2007,7 +2053,7 @@ rl_invoking_keyseqs_in_map (function, map)
 		  }
 		
 		strcat (keyname, seqs[i]);
-		free (seqs[i]);
+		xfree (seqs[i]);
 
 		if (result_index + 2 > result_size)
 		  {
@@ -2019,7 +2065,7 @@ rl_invoking_keyseqs_in_map (function, map)
 		result[result_index] = (char *)NULL;
 	      }
 
-	    free (seqs);
+	    xfree (seqs);
 	  }
 	  break;
 	}
@@ -2071,10 +2117,10 @@ rl_function_dumper (print_readably)
 		{
 		  fprintf (rl_outstream, "\"%s\": %s\n",
 			   invokers[j], name);
-		  free (invokers[j]);
+		  xfree (invokers[j]);
 		}
 
-	      free (invokers);
+	      xfree (invokers);
 	    }
 	}
       else
@@ -2098,9 +2144,9 @@ rl_function_dumper (print_readably)
 		fprintf (rl_outstream, "...\n");
 
 	      for (j = 0; invokers[j]; j++)
-		free (invokers[j]);
+		xfree (invokers[j]);
 
-	      free (invokers);
+	      xfree (invokers);
 	    }
 	}
     }
@@ -2146,8 +2192,8 @@ _rl_macro_dumper_internal (print_readably, map, prefix)
 	    fprintf (rl_outstream, "%s%s outputs %s\n", prefix ? prefix : "",
 							keyname,
 							out ? out : "");
-	  free (keyname);
-	  free (out);
+	  xfree (keyname);
+	  xfree (out);
 	  break;
 	case ISFUNC:
 	  break;
@@ -2170,13 +2216,13 @@ _rl_macro_dumper_internal (print_readably, map, prefix)
 		  out = (char *)xmalloc (strlen (keyname) + prefix_len + 1);
 		  strcpy (out, prefix);
 		  strcpy (out + prefix_len, keyname);
-		  free (keyname);
+		  xfree (keyname);
 		  keyname = out;
 		}
 	    }
 
 	  _rl_macro_dumper_internal (print_readably, FUNCTION_TO_KEYMAP (map, key), keyname);
-	  free (keyname);
+	  xfree (keyname);
 	  break;
 	}
     }
@@ -2222,6 +2268,11 @@ _rl_get_string_variable_value (name)
     }
   else if (_rl_stricmp (name, "comment-begin") == 0)
     return (_rl_comment_begin ? _rl_comment_begin : RL_COMMENT_BEGIN_DEFAULT);
+  else if (_rl_stricmp (name, "completion-prefix-display-length") == 0)
+    {
+      sprintf (numbuf, "%d", _rl_completion_prefix_display_length);
+      return (numbuf);
+    }
   else if (_rl_stricmp (name, "completion-query-items") == 0)
     {
       sprintf (numbuf, "%d", rl_completion_query_items);
@@ -2229,6 +2280,11 @@ _rl_get_string_variable_value (name)
     }
   else if (_rl_stricmp (name, "editing-mode") == 0)
     return (rl_get_keymap_name_from_edit_mode ());
+  else if (_rl_stricmp (name, "history-size") == 0)
+    {
+      sprintf (numbuf, "%d", history_is_stifled() ? history_max_entries : 0);
+      return (numbuf);
+    }
   else if (_rl_stricmp (name, "isearch-terminators") == 0)
     {
       if (_rl_isearch_terminators == 0)
@@ -2237,7 +2293,7 @@ _rl_get_string_variable_value (name)
       if (ret)
 	{
 	  strncpy (numbuf, ret, sizeof (numbuf) - 1);
-	  free (ret);
+	  xfree (ret);
 	  numbuf[sizeof(numbuf) - 1] = '\0';
 	}
       else
@@ -2301,8 +2357,8 @@ rl_dump_variables (count, key)
 /* Return non-zero if any members of ARRAY are a substring in STRING. */
 static int
 substring_member_of_array (string, array)
-     char *string;
-     const char **array;
+     const char *string;
+     const char * const *array;
 {
   while (*array)
     {

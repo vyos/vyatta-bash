@@ -1,23 +1,22 @@
 /* findcmd.c -- Functions to search for commands by name. */
 
-/* Copyright (C) 1997 Free Software Foundation, Inc.
+/* Copyright (C) 1997-2009 Free Software Foundation, Inc.
 
    This file is part of GNU Bash, the Bourne Again SHell.
 
-   Bash is free software; you can redistribute it and/or modify it
-   under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2, or (at your option)
-   any later version.
+   Bash is free software: you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation, either version 3 of the License, or
+   (at your option) any later version.
 
-   Bash is distributed in the hope that it will be useful, but WITHOUT
-   ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
-   or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public
-   License for more details.
+   Bash is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
 
    You should have received a copy of the GNU General Public License
-   along with Bash; see the file COPYING.  If not, write to the
-   Free Software Foundation Inc.,
-   59 Temple Place, Suite 330, Boston, MA 02111-1307, USA. */
+   along with Bash.  If not, see <http://www.gnu.org/licenses/>.
+*/
 
 #include "config.h"
 
@@ -94,7 +93,18 @@ file_status (name)
 
   r = FS_EXISTS;
 
-#if defined (AFS)
+#if defined (HAVE_EACCESS)
+  /* Use eaccess(2) if we have it to take things like ACLs and other
+     file access mechanisms into account.  eaccess uses the effective
+     user and group IDs, not the real ones.  We could use sh_eaccess,
+     but we don't want any special treatment for /dev/fd. */
+  if (eaccess (name, X_OK) == 0)
+    r |= FS_EXECABLE;
+  if (eaccess (name, R_OK) == 0)
+    r |= FS_READABLE;
+
+  return r;
+#elif defined (AFS)
   /* We have to use access(2) to determine access because AFS does not
      support Unix file system semantics.  This may produce wrong
      answers for non-AFS files when ruid != euid.  I hate AFS. */
@@ -104,7 +114,7 @@ file_status (name)
     r |= FS_READABLE;
 
   return r;
-#else /* !AFS */
+#else /* !HAVE_EACCESS && !AFS */
 
   /* Find out if the file is actually executable.  By definition, the
      only other criteria is that the file has an execute bit set that
@@ -308,7 +318,7 @@ search_for_command (pathname)
   if (hashed_file && (posixly_correct || check_hashed_filenames))
     {
       st = file_status (hashed_file);
-      if ((st ^ (FS_EXISTS | FS_EXECABLE)) != 0)
+      if ((st & (FS_EXISTS|FS_EXECABLE)) != (FS_EXISTS|FS_EXECABLE))
 	{
 	  phash_remove (pathname);
 	  free (hashed_file);

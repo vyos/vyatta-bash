@@ -1,25 +1,25 @@
-/* The thing that makes children, remembers them, and contains wait loops. */
+/* jobs.c - functions that make children, remember them, and handle their termination. */
 
 /* This file works with both POSIX and BSD systems.  It implements job
    control. */
 
-/* Copyright (C) 1989-2006 Free Software Foundation, Inc.
+/* Copyright (C) 1989-2009 Free Software Foundation, Inc.
 
    This file is part of GNU Bash, the Bourne Again SHell.
 
-   Bash is free software; you can redistribute it and/or modify it under
-   the terms of the GNU General Public License as published by the Free
-   Software Foundation; either version 2, or (at your option) any later
-   version.
+   Bash is free software: you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation, either version 3 of the License, or
+   (at your option) any later version.
 
-   Bash is distributed in the hope that it will be useful, but WITHOUT ANY
-   WARRANTY; without even the implied warranty of MERCHANTABILITY or
-   FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
-   for more details.
+   Bash is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
 
-   You should have received a copy of the GNU General Public License along
-   with Bash; see the file COPYING.  If not, write to the Free Software
-   Foundation, 59 Temple Place, Suite 330, Boston, MA 02111 USA. */
+   You should have received a copy of the GNU General Public License
+   along with Bash.  If not, see <http://www.gnu.org/licenses/>.
+*/
 
 #include "config.h"
 
@@ -67,6 +67,7 @@
 #include "bashintl.h"
 #include "shell.h"
 #include "jobs.h"
+#include "execute_cmd.h"
 #include "flags.h"
 
 #include "builtins/builtext.h"
@@ -144,6 +145,7 @@ extern int subshell_environment, line_number;
 extern int posixly_correct, shell_level;
 extern int last_command_exit_value, last_command_exit_signal;
 extern int loop_level, breaking;
+extern int executing_list;
 extern int sourcelevel;
 extern int running_trap;
 extern sh_builtin_func_t *this_shell_builtin;
@@ -217,8 +219,6 @@ int check_window_size;
 
 /* Functions local to this file. */
 
-static void run_sigchld_trap __P((int));
-
 static sighandler wait_sigint_handler __P((int));
 static sighandler sigchld_handler __P((int));
 static sighandler sigcont_sighandler __P((int));
@@ -250,6 +250,7 @@ static int job_exit_status __P((int));
 static int job_exit_signal __P((int));
 static int set_job_status_and_cleanup __P((int));
 
+static WAIT job_signal_status __P((int));
 static WAIT raw_job_exit_status __P((int));
 
 static void notify_of_job_status __P((void));
@@ -266,12 +267,12 @@ static void set_current_job __P((int));
 static void reset_current __P((void));
 static void set_job_running __P((int));
 static void setjstatus __P((int));
+static int maybe_give_terminal_to __P((pid_t, pid_t, int));
 static void mark_all_jobs_as_dead __P((void));
 static void mark_dead_jobs_as_notified __P((int));
 static void restore_sigint_handler __P((void));
 #if defined (PGRP_PIPE)
 static void pipe_read __P((int *));
-static void pipe_close __P((int *));
 #endif
 
 static struct pidstat *bgp_alloc __P((pid_t, int));
@@ -441,7 +442,7 @@ restore_pipeline (discard)
   old_pipeline = the_pipeline;
   the_pipeline = saved_pipeline;
   already_making_children = saved_already_making_children;
-  if (discard)
+  if (discard && old_pipeline)
     discard_pipeline (old_pipeline);
 }
 
@@ -454,7 +455,7 @@ start_pipeline ()
       cleanup_the_pipeline ();
       pipeline_pgrp = 0;
 #if defined (PGRP_PIPE)
-      pipe_close (pgrp_pipe);
+      sh_closepipe (pgrp_pipe);
 #endif
     }
 
@@ -462,7 +463,7 @@ start_pipeline ()
   if (job_control)
     {
       if (pipe (pgrp_pipe) == -1)
-	sys_error ("start_pipeline: pgrp pipe");
+	sys_error (_("start_pipeline: pgrp pipe"));
     }
 #endif
 }
@@ -484,7 +485,7 @@ stop_pipeline (async, deferred)
 
 #if defined (PGRP_PIPE)
   /* The parent closes the process group synchronization pipe. */
-  pipe_close (pgrp_pipe);
+  sh_closepipe (pgrp_pipe);
 #endif
 
   cleanup_dead_jobs ();
@@ -638,7 +639,7 @@ stop_pipeline (async, deferred)
 	   *
 	   */
 	  if (job_control && newjob->pgrp && (subshell_environment&SUBSHELL_ASYNC) == 0)
-	    give_terminal_to (newjob->pgrp, 0);
+	    maybe_give_terminal_to (shell_pgrp, newjob->pgrp, 0);
 	}
     }
 
@@ -700,8 +701,8 @@ bgp_delete (pid)
   for (prev = p = bgpids.list; p; prev = p, p = p->next)
     if (p->pid == pid)
       {
-        prev->next = p->next;	/* remove from list */
-        break;
+	prev->next = p->next;	/* remove from list */
+	break;
       }
 
   if (p == 0)
@@ -770,7 +771,7 @@ bgp_prune ()
       bgpids.npid--;
     }
 }
-    
+
 /* Reset the values of js.j_lastj and js.j_firstj after one or both have
    been deleted.  The caller should check whether js.j_njobs is 0 before
    calling this.  This wraps around, but the rest of the code does not.  At
@@ -783,11 +784,13 @@ reset_job_indices ()
   if (jobs[js.j_firstj] == 0)
     {
       old = js.j_firstj++;
+      if (old >= js.j_jobslots)
+	old = js.j_jobslots - 1;
       while (js.j_firstj != old)
 	{
 	  if (js.j_firstj >= js.j_jobslots)
 	    js.j_firstj = 0;
-	  if (jobs[js.j_firstj])
+	  if (jobs[js.j_firstj] || js.j_firstj == old)	/* needed if old == 0 */
 	    break;
 	  js.j_firstj++;
 	}
@@ -797,11 +800,13 @@ reset_job_indices ()
   if (jobs[js.j_lastj] == 0)
     {
       old = js.j_lastj--;
+      if (old < 0)
+	old = 0;
       while (js.j_lastj != old)
 	{
 	  if (js.j_lastj < 0)
 	    js.j_lastj = js.j_jobslots - 1;
-	  if (jobs[js.j_lastj])
+	  if (jobs[js.j_lastj] || js.j_lastj == old)	/* needed if old == js.j_jobslots */
 	    break;
 	  js.j_lastj--;
 	}
@@ -835,11 +840,17 @@ cleanup_dead_jobs ()
       if (jobs[i] && DEADJOB (i) && IS_NOTIFIED (i))
 	delete_job (i, 0);
     }
+
+#if defined (COPROCESS_SUPPORT)
+  coproc_reap ();
+#endif
+
   UNQUEUE_SIGCHLD(os);
 }
 
 static int
 processes_in_job (job)
+     int job;
 {
   int nproc;
   register PROCESS *p;
@@ -900,6 +911,7 @@ realloc_jobs_list ()
   BLOCK_CHILD (set, oset);
   nlist = (js.j_jobslots == nsize) ? jobs : (JOB **) xmalloc (nsize * sizeof (JOB *));
 
+  js.c_reaped = js.j_ndead = 0;
   for (i = j = 0; i < js.j_jobslots; i++)
     if (jobs[i])
       {
@@ -908,12 +920,18 @@ realloc_jobs_list ()
 	if (i == js.j_previous)
 	  nprev = j;
 	nlist[j++] = jobs[i];
+	if (jobs[i]->state == JDEAD)
+	  {
+	    js.j_ndead++;
+	    js.c_reaped += processes_in_job (i);
+	  }
       }
 
 #if defined (DEBUG)
   itrace ("realloc_jobs_list: resize jobs list from %d to %d", js.j_jobslots, nsize);
   itrace ("realloc_jobs_list: j_lastj changed from %d to %d", js.j_lastj, (j > 0) ? j - 1 : 0);
-  itrace ("realloc_jobs_list: j_njobs changed from %d to %d", js.j_njobs, (j > 0) ? j - 1 : 0);
+  itrace ("realloc_jobs_list: j_njobs changed from %d to %d", js.j_njobs, j);
+  itrace ("realloc_jobs_list: js.j_ndead %d js.c_reaped %d", js.j_ndead, js.c_reaped);
 #endif
 
   js.j_firstj = 0;
@@ -963,7 +981,11 @@ compact_jobs_list (flags)
   reap_dead_jobs ();
   realloc_jobs_list ();
 
-  return (js.j_lastj);
+#ifdef DEBUG
+  itrace("compact_jobs_list: returning %d", (js.j_lastj || jobs[js.j_lastj]) ? js.j_lastj + 1 : 0);
+#endif
+
+  return ((js.j_lastj || jobs[js.j_lastj]) ? js.j_lastj + 1 : 0);
 }
 
 /* Delete the job at INDEX from the job list.  Must be called
@@ -984,8 +1006,6 @@ delete_job (job_index, dflags)
   temp = jobs[job_index];
   if (temp == 0)
     return;
-  if (job_index == js.j_current || job_index == js.j_previous)
-    reset_current ();
 
   if ((dflags & DEL_NOBGPID) == 0)
     {
@@ -1028,6 +1048,9 @@ delete_job (job_index, dflags)
     js.j_firstj = js.j_lastj = 0;
   else if (jobs[js.j_firstj] == 0 || jobs[js.j_lastj] == 0)
     reset_job_indices ();
+
+  if (job_index == js.j_current || job_index == js.j_previous)
+    reset_current ();
 }
 
 /* Must be called with SIGCHLD blocked. */
@@ -1084,10 +1107,10 @@ add_process (name, pid)
     {
 #  ifdef DEBUG
       if (j == NO_JOB)
-	internal_warning ("add_process: process %5ld (%s) in the_pipeline", (long)p->pid, p->command);
+	internal_warning (_("add_process: process %5ld (%s) in the_pipeline"), (long)p->pid, p->command);
 #  endif
       if (PALIVE (p))
-        internal_warning ("add_process: pid %5ld (%s) marked as still alive", (long)p->pid, p->command);
+        internal_warning (_("add_process: pid %5ld (%s) marked as still alive"), (long)p->pid, p->command);
       p->running = PS_RECYCLED;		/* mark as recycled */
     }
 #endif
@@ -1390,7 +1413,7 @@ j_strsignal (s)
   if (x == 0)
     {
       x = retcode_name_buffer;
-      sprintf (x, "Signal %d", s);
+      sprintf (x, _("Signal %d"), s);
     }
   return x;
 }
@@ -1404,20 +1427,20 @@ printable_job_status (j, p, format)
   static char *temp;
   int es;
 
-  temp = "Done";
+  temp = _("Done");
 
   if (STOPPED (j) && format == 0)
     {
       if (posixly_correct == 0 || p == 0 || (WIFSTOPPED (p->status) == 0))
-	temp = "Stopped";
+	temp = _("Stopped");
       else
 	{
 	  temp = retcode_name_buffer;
-	  sprintf (temp, "Stopped(%s)", signal_name (WSTOPSIG (p->status)));
+	  sprintf (temp, _("Stopped(%s)"), signal_name (WSTOPSIG (p->status)));
 	}
     }
   else if (RUNNING (j))
-    temp = "Running";
+    temp = _("Running");
   else
     {
       if (WIFSTOPPED (p->status))
@@ -1429,14 +1452,14 @@ printable_job_status (j, p, format)
 	  temp = retcode_name_buffer;
 	  es = WEXITSTATUS (p->status);
 	  if (es == 0)
-	    strcpy (temp, "Done");
+	    strcpy (temp, _("Done"));
 	  else if (posixly_correct)
-	    sprintf (temp, "Done(%d)", es);
+	    sprintf (temp, _("Done(%d)"), es);
 	  else
-	    sprintf (temp, "Exit %d", es);
+	    sprintf (temp, _("Exit %d"), es);
 	}
       else
-	temp = "Unknown status";
+	temp = _("Unknown status");
     }
 
   return temp;
@@ -1523,7 +1546,7 @@ print_pipeline (p, job_index, format, stream)
 	      if ((WIFSTOPPED (show->status) == 0) &&
 		  (WIFCONTINUED (show->status) == 0) &&
 		  WIFCORED (show->status))
-		fprintf (stream, "(core dumped) ");
+		fprintf (stream, _("(core dumped) "));
 	    }
 	}
 
@@ -1542,7 +1565,7 @@ print_pipeline (p, job_index, format, stream)
 
 	  if (strcmp (temp, jobs[job_index]->wd) != 0)
 	    fprintf (stream,
-	      "  (wd: %s)", polite_directory_format (jobs[job_index]->wd));
+	      _("  (wd: %s)"), polite_directory_format (jobs[job_index]->wd));
 	}
 
       if (format || (p == last))
@@ -1658,6 +1681,7 @@ make_child (command, async_p)
      char *command;
      int async_p;
 {
+  int forksleep;
   sigset_t set, oset;
   pid_t pid;
 
@@ -1669,6 +1693,8 @@ make_child (command, async_p)
 
   making_children ();
 
+  forksleep = 1;
+
 #if defined (BUFFERED_INPUT)
   /* If default_buffered_input is active, we are reading a script.  If
      the command is asynchronous, we have already duplicated /dev/null
@@ -1679,8 +1705,20 @@ make_child (command, async_p)
     sync_buffered_stream (default_buffered_input);
 #endif /* BUFFERED_INPUT */
 
-  /* Create the child, handle severe errors. */
-  if ((pid = fork ()) < 0)
+  /* Create the child, handle severe errors.  Retry on EAGAIN. */
+  while ((pid = fork ()) < 0 && errno == EAGAIN && forksleep < FORKSLEEP_MAX)
+    {
+#if 0		/* for bash-4.2 */
+      /* If we can't create any children, try to reap some dead ones. */
+      waitchld (-1, 0);
+#endif
+      sys_error ("fork: retry");
+      if (sleep (forksleep) != 0)
+	break;
+      forksleep <<= 1;
+    }
+
+  if (pid < 0)
     {
       sys_error ("fork");
 
@@ -1691,6 +1729,7 @@ make_child (command, async_p)
       if (the_pipeline)
 	kill_current_pipeline ();
 
+      last_command_exit_value = EX_NOEXEC;
       throw_to_top_level ();	/* Reset signals, etc. */
     }
 
@@ -1734,7 +1773,7 @@ make_child (command, async_p)
 	     B.4.3.3, p. 237 also covers this, in the context of job control
 	     shells. */
 	  if (setpgid (mypid, pipeline_pgrp) < 0)
-	    sys_error ("child setpgid (%ld to %ld)", (long)mypid, (long)pipeline_pgrp);
+	    sys_error (_("child setpgid (%ld to %ld)"), (long)mypid, (long)pipeline_pgrp);
 
 	  /* By convention (and assumption above), if
 	     pipeline_pgrp == shell_pgrp, we are making a child for
@@ -1767,14 +1806,18 @@ make_child (command, async_p)
 
 #if defined (PGRP_PIPE)
       /* Release the process group pipe, since our call to setpgid ()
-	 is done.  The last call to pipe_close is done in stop_pipeline. */
-      pipe_close (pgrp_pipe);
+	 is done.  The last call to sh_closepipe is done in stop_pipeline. */
+      sh_closepipe (pgrp_pipe);
 #endif /* PGRP_PIPE */
 
+#if 0
+      /* Don't set last_asynchronous_pid in the child */
       if (async_p)
-	last_asynchronous_pid = mypid;
+	last_asynchronous_pid = mypid;		/* XXX */
+      else
+#endif
 #if defined (RECYCLES_PIDS)
-      else if (last_asynchronous_pid == mypid)
+      if (last_asynchronous_pid == mypid)
         /* Avoid pid aliasing.  1 seems like a safe, unusual pid value. */
 	last_asynchronous_pid = 1;
 #endif
@@ -1949,7 +1992,7 @@ get_tty_state ()
 	  /* Only print an error message if we're really interactive at
 	     this time. */
 	  if (interactive)
-	    sys_error ("[%ld: %d] tcgetattr", (long)getpid (), shell_level);
+	    sys_error ("[%ld: %d (%d)] tcgetattr", (long)getpid (), shell_level, tty);
 #endif
 	  return -1;
 	}
@@ -1988,7 +2031,7 @@ set_tty_state ()
 	  /* Only print an error message if we're really interactive at
 	     this time. */
 	  if (interactive)
-	    sys_error ("[%ld: %d] tcsetattr", (long)getpid (), shell_level);
+	    sys_error ("[%ld: %d (%d)] tcsetattr", (long)getpid (), shell_level, tty);
 	  return -1;
 	}
 #endif /* TERMIOS_TTY_DRIVER */
@@ -2210,6 +2253,26 @@ process_exit_status (status)
     return (EXECUTION_SUCCESS);
 }
 
+static WAIT
+job_signal_status (job)
+     int job;
+{
+  register PROCESS *p;
+  WAIT s;
+
+  p = jobs[job]->pipe;
+  do
+    {
+      s = p->status;
+      if (WIFSIGNALED(s) || WIFSTOPPED(s))
+	break;
+      p = p->next;
+    }
+  while (p != jobs[job]->pipe);
+
+  return s;
+}
+  
 /* Return the exit status of the last process in the pipeline for job JOB.
    This is the exit status of the entire job. */
 static WAIT
@@ -2218,6 +2281,7 @@ raw_job_exit_status (job)
 {
   register PROCESS *p;
   int fail;
+  WAIT ret;
 
   if (pipefail_opt)
     {
@@ -2225,11 +2289,13 @@ raw_job_exit_status (job)
       p = jobs[job]->pipe;
       do
 	{
-	  if (p->status != EXECUTION_SUCCESS) fail = p->status;
+	  if (WSTATUS (p->status) != EXECUTION_SUCCESS)
+	    fail = WSTATUS(p->status);
 	  p = p->next;
 	}
       while (p != jobs[job]->pipe);
-      return fail;
+      WSTATUS (ret) = fail;
+      return ret;
     }
 
   for (p = jobs[job]->pipe; p->next != jobs[job]->pipe; p = p->next)
@@ -2292,11 +2358,14 @@ wait_for (pid)
      to finish.  We don't want the shell to exit if an interrupt is
      received, only if one of the jobs run is killed via SIGINT.  If
      job control is not set, the job will be run in the same pgrp as
-     the shell, and the shell will see any signals the job gets. */
+     the shell, and the shell will see any signals the job gets.  In
+     fact, we want this set every time the waiting shell and the waited-
+     for process are in the same process group, including command
+     substitution. */
 
   /* This is possibly a race condition -- should it go in stop_pipeline? */
   wait_sigint_received = 0;
-  if (job_control == 0)
+  if (job_control == 0 || (subshell_environment&SUBSHELL_COMSUB))
     {
       old_sigint_handler = set_signal_handler (SIGINT, wait_sigint_handler);
       if (old_sigint_handler == SIG_IGN)
@@ -2307,6 +2376,8 @@ wait_for (pid)
 
   if (interactive && job_control == 0)
     QUIT;
+  /* Check for terminating signals and exit the shell if we receive one */
+  CHECK_TERMSIG;
 
   /* If we say wait_for (), then we have a record of this child somewhere.
      If it and none of its peers are running, don't call waitchld(). */
@@ -2367,7 +2438,7 @@ wait_for (pid)
 	  if (r == -1 && errno == ECHILD)
 	    {
 	      child->running = PS_DONE;
-	      child->status = 0;	/* XXX -- can't find true status */
+	      WSTATUS (child->status) = 0;	/* XXX -- can't find true status */
 	      js.c_living = 0;		/* no living child processes */
 	      if (job != NO_JOB)
 		{
@@ -2385,6 +2456,8 @@ wait_for (pid)
 	 old SIGINT signal handler. */
       if (interactive && job_control == 0)
 	QUIT;
+      /* Check for terminating signals and exit the shell if we receive one */
+      CHECK_TERMSIG;
     }
   while (PRUNNING (child) || (job != NO_JOB && RUNNING (job)));
 
@@ -2442,15 +2515,7 @@ if (job == NO_JOB)
 	     to a signal.  We might want to change this later to just check
 	     the last process in the pipeline.  If no process exits due to a
 	     signal, S is left as the status of the last job in the pipeline. */
-	  p = jobs[job]->pipe;
-	  do
-	    {
-	      s = p->status;
-	      if (WIFSIGNALED(s) || WIFSTOPPED(s))
-		break;
-	      p = p->next;
-	    }
-	  while (p != jobs[job]->pipe);
+	  s = job_signal_status (job);
 
 	  if (WIFSIGNALED (s) || WIFSTOPPED (s))
 	    {
@@ -2475,13 +2540,31 @@ if (job == NO_JOB)
 		 or until loop, act as if the shell received SIGINT as
 		 well, so the loop can be broken.  This doesn't call the
 		 SIGINT signal handler; maybe it should. */
-	      if (signal_is_trapped (SIGINT) == 0 && loop_level)
+	      if (signal_is_trapped (SIGINT) == 0 && (loop_level || (shell_compatibility_level > 32 && executing_list)))
 		ADDINTERRUPT;
 	      else
 		{
 		  putchar ('\n');
 		  fflush (stdout);
 		}
+	    }
+	}
+      else if ((subshell_environment & SUBSHELL_COMSUB) && wait_sigint_received)
+	{
+	  /* If waiting for a job in a subshell started to do command
+	     substitution, simulate getting and being killed by the SIGINT to
+	     pass the status back to our parent. */
+	  s = job_signal_status (job);
+	
+	  if (WIFSIGNALED (s) && WTERMSIG (s) == SIGINT && signal_is_trapped (SIGINT) == 0)
+	    {
+	      UNBLOCK_CHILD (oset);
+	      restore_sigint_handler ();
+	      old_sigint_handler = set_signal_handler (SIGINT, SIG_DFL);
+	      if (old_sigint_handler == SIG_IGN)
+		restore_sigint_handler ();
+	      else
+		kill (getpid (), SIGINT);
 	    }
 	}
 
@@ -2968,7 +3051,15 @@ waitchld (wpid, block)
 			: 0;
       if (sigchld || block == 0)
 	waitpid_flags |= WNOHANG;
+      /* Check for terminating signals and exit the shell if we receive one */
       CHECK_TERMSIG;
+
+      if (block == 1 && queue_sigchld == 0 && (waitpid_flags & WNOHANG) == 0)
+	{
+	  internal_warning (_("waitchld: turning on WNOHANG to avoid indefinite block"));
+	  waitpid_flags |= WNOHANG;
+	}
+
       pid = WAITPID (-1, &status, waitpid_flags);
 
       /* WCONTINUED may be rejected by waitpid as invalid even when defined */
@@ -3010,12 +3101,20 @@ waitchld (wpid, block)
       /* Locate our PROCESS for this pid. */
       child = find_process (pid, 1, &job);	/* want living procs only */
 
+#if defined (COPROCESS_SUPPORT)
+      coproc_pidchk (pid, status);
+#endif
+
       /* It is not an error to have a child terminate that we did
 	 not have a record of.  This child could have been part of
 	 a pipeline in backquote substitution.  Even so, I'm not
 	 sure child is ever non-zero. */
       if (child == 0)
-	continue;
+	{
+	  if (WIFEXITED (status) || WIFSIGNALED (status))
+	    js.c_reaped++;
+	  continue;
+	}
 
       /* Remember status, and whether or not the process is running. */
       child->status = status;
@@ -3054,7 +3153,17 @@ waitchld (wpid, block)
   /* Call a SIGCHLD trap handler for each child that exits, if one is set. */
   if (job_control && signal_is_trapped (SIGCHLD) && children_exited &&
       trap_list[SIGCHLD] != (char *)IGNORE_SIG)
-    run_sigchld_trap (children_exited);
+    {
+      if (posixly_correct && this_shell_builtin && this_shell_builtin == wait_builtin)
+	{
+	  interrupt_immediately = 0;
+	  trap_handler (SIGCHLD);	/* set pending_traps[SIGCHLD] */
+	  wait_signal_received = SIGCHLD;
+	  longjmp (wait_intr_buf, 1);
+	}
+
+      run_sigchld_trap (children_exited);
+    }
 
   /* We have successfully recorded the useful information about this process
      that has just changed state.  If we notify asynchronously, and the job
@@ -3273,7 +3382,7 @@ setjstatus (j)
 #endif
 }
 
-static void
+void
 run_sigchld_trap (nchild)
      int nchild;
 {
@@ -3304,7 +3413,7 @@ run_sigchld_trap (nchild)
   subst_assign_varlist = (WORD_LIST *)NULL;
   the_pipeline = (PROCESS *)NULL;
 
-  restore_default_signal (SIGCHLD);
+  set_impossible_sigchld_trap ();
   jobs_list_frozen = 1;
   for (i = 0; i < nchild; i++)
     {
@@ -3397,7 +3506,7 @@ notify_of_job_status ()
 		  signal_is_trapped (termsig) == 0)
 		{
 		  /* Don't print `0' for a line number. */
-		  fprintf (stderr, "%s: line %d: ", get_name_for_error (), (line_number == 0) ? 1 : line_number);
+		  fprintf (stderr, _("%s: line %d: "), get_name_for_error (), (line_number == 0) ? 1 : line_number);
 		  pretty_print_job (job, JLIST_NONINTERACTIVE, stderr);
 		}
 	      else if (IS_FOREGROUND (job))
@@ -3411,7 +3520,7 @@ notify_of_job_status ()
 		      fprintf (stderr, "%s", j_strsignal (termsig));
 
 		      if (WIFCORED (s))
-			fprintf (stderr, " (core dumped)");
+			fprintf (stderr, _(" (core dumped)"));
 
 		      fprintf (stderr, "\n");
 		    }
@@ -3423,7 +3532,7 @@ notify_of_job_status ()
 		  pretty_print_job (job, JLIST_STANDARD, stderr);
 		  if (dir && strcmp (dir, jobs[job]->wd) != 0)
 		    fprintf (stderr,
-			     "(wd now: %s)\n", polite_directory_format (dir));
+			     _("(wd now: %s)\n"), polite_directory_format (dir));
 		}
 
 	      jobs[job]->flags |= J_NOTIFIED;
@@ -3436,7 +3545,7 @@ notify_of_job_status ()
 	      pretty_print_job (job, JLIST_STANDARD, stderr);
 	      if (dir && (strcmp (dir, jobs[job]->wd) != 0))
 		fprintf (stderr,
-			 "(wd now: %s)\n", polite_directory_format (dir));
+			 _("(wd now: %s)\n"), polite_directory_format (dir));
 	      jobs[job]->flags |= J_NOTIFIED;
 	      break;
 
@@ -3460,11 +3569,15 @@ int
 initialize_job_control (force)
      int force;
 {
+  pid_t t;
+  int t_errno;
+
+  t_errno = -1;
   shell_pgrp = getpgid (0);
 
   if (shell_pgrp == -1)
     {
-      sys_error ("initialize_job_control: getpgrp failed");
+      sys_error (_("initialize_job_control: getpgrp failed"));
       exit (1);
     }
 
@@ -3477,10 +3590,21 @@ initialize_job_control (force)
     }
   else
     {
+      shell_tty = -1;
+
+      /* If forced_interactive is set, we skip the normal check that stderr
+	 is attached to a tty, so we need to check here.  If it's not, we
+	 need to see whether we have a controlling tty by opening /dev/tty,
+	 since trying to use job control tty pgrp manipulations on a non-tty
+	 is going to fail. */
+      if (forced_interactive && isatty (fileno (stderr)) == 0)
+	shell_tty = open ("/dev/tty", O_RDWR|O_NONBLOCK);
+
       /* Get our controlling terminal.  If job_control is set, or
 	 interactive is set, then this is an interactive shell no
 	 matter where fd 2 is directed. */
-      shell_tty = dup (fileno (stderr));	/* fd 2 */
+      if (shell_tty == -1)
+	shell_tty = dup (fileno (stderr));	/* fd 2 */
 
       shell_tty = move_to_high_fd (shell_tty, 1, -1);
 
@@ -3507,10 +3631,13 @@ initialize_job_control (force)
 	  break;
 	}
 
+      if (terminal_pgrp == -1)
+	t_errno = errno;
+
       /* Make sure that we are using the new line discipline. */
       if (set_new_line_discipline (shell_tty) < 0)
 	{
-	  sys_error ("initialize_job_control: line discipline");
+	  sys_error (_("initialize_job_control: line discipline"));
 	  job_control = 0;
 	}
       else
@@ -3520,7 +3647,7 @@ initialize_job_control (force)
 
 	  if ((original_pgrp != shell_pgrp) && (setpgid (0, shell_pgrp) < 0))
 	    {
-	      sys_error ("initialize_job_control: setpgid");
+	      sys_error (_("initialize_job_control: setpgid"));
 	      shell_pgrp = original_pgrp;
 	    }
 
@@ -3537,10 +3664,19 @@ initialize_job_control (force)
 	    {
 	      if (give_terminal_to (shell_pgrp, 0) < 0)
 		{
+		  t_errno = errno;
 		  setpgid (0, original_pgrp);
 		  shell_pgrp = original_pgrp;
 		  job_control = 0;
 		}
+	    }
+
+	  if (job_control && ((t = tcgetpgrp (shell_tty)) == -1 || t != shell_pgrp))
+	    {
+	      if (t_errno != -1)
+		errno = t_errno;
+	      sys_error (_("cannot set terminal process group (%d)"), t);
+	      job_control = 0;
 	    }
 	}
       if (job_control == 0)
@@ -3691,7 +3827,7 @@ give_terminal_to (pgrp, force)
      int force;
 {
   sigset_t set, oset;
-  int r;
+  int r, e;
 
   r = 0;
   if (job_control || force)
@@ -3712,13 +3848,45 @@ give_terminal_to (pgrp, force)
 	    shell_tty, (long)getpid(), (long)pgrp);
 #endif
 	  r = -1;
+	  e = errno;
 	}
       else
 	terminal_pgrp = pgrp;
       sigprocmask (SIG_SETMASK, &oset, (sigset_t *)NULL);
     }
 
+  if (r == -1)
+    errno = e;
+
   return r;
+}
+
+/* Give terminal to NPGRP iff it's currently owned by OPGRP.  FLAGS are the
+   flags to pass to give_terminal_to(). */
+static int
+maybe_give_terminal_to (opgrp, npgrp, flags)
+     pid_t opgrp, npgrp;
+     int flags;
+{
+  int tpgrp;
+
+  tpgrp = tcgetpgrp (shell_tty);
+  if (tpgrp < 0 && errno == ENOTTY)
+    return -1;
+  if (tpgrp == npgrp)
+    {
+      terminal_pgrp = npgrp;
+      return 0;
+    }
+  else if (tpgrp != opgrp)
+    {
+#if defined (DEBUG)
+      internal_warning ("maybe_give_terminal_to: terminal pgrp == %d shell pgrp = %d new pgrp = %d", tpgrp, opgrp, npgrp);
+#endif
+      return -1;
+    }
+  else
+    return (give_terminal_to (npgrp, flags));     
 }
 
 /* Clear out any jobs in the job array.  This is intended to be used by
@@ -3981,7 +4149,7 @@ without_job_control ()
   stop_making_children ();
   start_pipeline ();
 #if defined (PGRP_PIPE)
-  pipe_close (pgrp_pipe);
+  sh_closepipe (pgrp_pipe);
 #endif
   delete_all_jobs (0);
   set_job_control (0);
@@ -4044,25 +4212,30 @@ pipe_read (pp)
     }
 }
 
-/* Close the read and write ends of PP, an array of file descriptors. */
-static void
-pipe_close (pp)
-     int *pp;
-{
-  if (pp[0] >= 0)
-    close (pp[0]);
-
-  if (pp[1] >= 0)
-    close (pp[1]);
-
-  pp[0] = pp[1] = -1;
-}
-
 /* Functional interface closes our local-to-job-control pipes. */
 void
 close_pgrp_pipe ()
 {
-  pipe_close (pgrp_pipe);
+  sh_closepipe (pgrp_pipe);
+}
+
+void
+save_pgrp_pipe (p, clear)
+     int *p;
+     int clear;
+{
+  p[0] = pgrp_pipe[0];
+  p[1] = pgrp_pipe[1];
+  if (clear)
+    pgrp_pipe[0] = pgrp_pipe[1] = -1;
+}
+
+void
+restore_pgrp_pipe (p)
+     int *p;
+{
+  pgrp_pipe[0] = p[0];
+  pgrp_pipe[1] = p[1];
 }
 
 #endif /* PGRP_PIPE */

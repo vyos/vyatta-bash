@@ -1,0 +1,45 @@
+#! /bin/sh -e
+
+if [ $# -eq 3 -a "$2" = '-d' ]; then
+    pdir="-d $3"
+elif [ $# -ne 1 ]; then
+    echo >&2 "`basename $0`: script expects -patch|-unpatch as argument"
+    exit 1
+fi
+case "$1" in
+    -patch) patch $pdir -f --no-backup-if-mismatch -p0 < $0;;
+    -unpatch) patch $pdir -f --no-backup-if-mismatch -R -p0 < $0;;
+    *)
+	echo >&2 "`basename $0`: script expects -patch|-unpatch as argument"
+	exit 1
+esac
+exit 0
+
+# DP: Fix bug in Bash_aliases example.
+
+--- examples/startup-files/Bash_aliases~	2008-04-19 21:57:24.000000000 +0200
++++ examples/startup-files/Bash_aliases	2008-04-19 21:59:43.000000000 +0200
+@@ -41,20 +41,20 @@
+ { 
+     local count="$1" i;
+     shift;
+-    for i in $(seq 1 "$count");
++    for i in $(_seq 1 "$count");
+     do
+         eval "$@";
+     done
+ }
+ 
+ # Subfunction needed by `repeat'.
+-seq ()
++_seq ()
+ { 
+     local lower upper output;
+     lower=$1 upper=$2;
+ 
+     if [ $lower -ge $upper ]; then return; fi
+-    while [ $lower -le $upper ];
++    while [ $lower -lt $upper ];
+     do
+ 	echo -n "$lower "
+         lower=$(($lower + 1))

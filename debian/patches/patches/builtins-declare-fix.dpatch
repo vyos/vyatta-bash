@@ -1,0 +1,37 @@
+#! /bin/sh -e
+
+if [ $# -eq 3 -a "$2" = '-d' ]; then
+    pdir="-d $3"
+elif [ $# -ne 1 ]; then
+    echo >&2 "`basename $0`: script expects -patch|-unpatch as argument"
+    exit 1
+fi
+case "$1" in
+    -patch) patch $pdir -f --no-backup-if-mismatch -p1 < $0;;
+    -unpatch) patch $pdir -f --no-backup-if-mismatch -R -p1 < $0;;
+    *)
+	echo >&2 "`basename $0`: script expects -patch|-unpatch as argument"
+	exit 1
+esac
+exit 0
+
+# DP: <your description>
+Andreas Schwab <schwab@linux-m68k.org> writes:
+
+> $ declare -A a=b; unset a
+> *** glibc detected *** /bin/bash: free(): invalid pointer: 0x10091644 ***
+
+And the obvious patch:
+
+--- bash-4.1/builtins/declare.def.~1~	2009-11-26 01:42:00.000000000 +0100
++++ bash-4.1/builtins/declare.def	2010-04-09 19:20:51.000000000 +0200
+@@ -512,7 +512,7 @@ declare_internal (list, local_var)
+ 	    {
+ 	      /* let bind_{array,assoc}_variable take care of this. */
+ 	      if (assoc_p (var))
+-		bind_assoc_variable (var, name, "0", value, aflags);
++		bind_assoc_variable (var, name, savestring ("0"), value, aflags);
+ 	      else
+ 		bind_array_variable (name, 0, value, aflags);
+ 	    }
+

@@ -19,12 +19,14 @@
    This code was originally developed by Vyatta, Inc.
    Portions created by Vyatta are Copyright (C) 2010 Vyatta, Inc. */
 
+#include <unistd.h>
+
 #include "shell.h"
 #include "filecntl.h"
 #include "jobs.h"
 
+#include <time.h>
 #include <utmp.h>
-#include <unistd.h>
 #include <mqueue.h>
 
 #include "logmessage.h"

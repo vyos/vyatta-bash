@@ -1,24 +1,24 @@
-/* GNU test program (ksb and mjb) */
+/* test.c - GNU test program (ksb and mjb) */
 
 /* Modified to run with the GNU shell Apr 25, 1988 by bfox. */
 
-/* Copyright (C) 1987-2005 Free Software Foundation, Inc.
+/* Copyright (C) 1987-2009 Free Software Foundation, Inc.
 
    This file is part of GNU Bash, the Bourne Again SHell.
 
-   Bash is free software; you can redistribute it and/or modify it under
-   the terms of the GNU General Public License as published by the Free
-   Software Foundation; either version 2, or (at your option) any later
-   version.
+   Bash is free software: you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation, either version 3 of the License, or
+   (at your option) any later version.
 
-   Bash is distributed in the hope that it will be useful, but WITHOUT ANY
-   WARRANTY; without even the implied warranty of MERCHANTABILITY or
-   FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
-   for more details.
+   Bash is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
 
-   You should have received a copy of the GNU General Public License along
-   with Bash; see the file COPYING.  If not, write to the Free Software
-   Foundation, 59 Temple Place, Suite 330, Boston, MA 02111 USA. */
+   You should have received a copy of the GNU General Public License
+   along with Bash.  If not, see <http://www.gnu.org/licenses/>.
+*/
 
 /* Define PATTERN_MATCHING to get the csh-like =~ and !~ pattern-matching
    binary operators. */
@@ -65,8 +65,9 @@ extern int errno;
 #endif
 
 #if !defined (STREQ)
-#  define STREQ(a, b) ((a)[0] == (b)[0] && strcmp (a, b) == 0)
+#  define STREQ(a, b) ((a)[0] == (b)[0] && strcmp ((a), (b)) == 0)
 #endif /* !STREQ */
+#define STRCOLLEQ(a, b) ((a)[0] == (b)[0] && strcoll ((a), (b)) == 0)
 
 #if !defined (R_OK)
 #define R_OK 4
@@ -310,7 +311,7 @@ filecomp (s, t, op)
     {
     case OT: return (r1 < r2 || (r2 == 0 && st1.st_mtime < st2.st_mtime));
     case NT: return (r1 > r2 || (r1 == 0 && st1.st_mtime > st2.st_mtime));
-    case EF: return ((st1.st_dev == st2.st_dev) && (st1.st_ino == st2.st_ino));
+    case EF: return (same_file (s, t, &st1, &st2));
     }
   return (FALSE);
 }
@@ -375,12 +376,16 @@ binary_test (op, arg1, arg2, flags)
 
   if (op[0] == '=' && (op[1] == '\0' || (op[1] == '=' && op[2] == '\0')))
     return (patmatch ? patcomp (arg1, arg2, EQ) : STREQ (arg1, arg2));
-
   else if ((op[0] == '>' || op[0] == '<') && op[1] == '\0')
-    return ((op[0] == '>') ? (strcmp (arg1, arg2) > 0) : (strcmp (arg1, arg2) < 0));
-
+    {
+      if (shell_compatibility_level > 40 && flags & TEST_LOCALE)
+	return ((op[0] == '>') ? (strcoll (arg1, arg2) > 0) : (strcoll (arg1, arg2) < 0));
+      else
+	return ((op[0] == '>') ? (strcmp (arg1, arg2) > 0) : (strcmp (arg1, arg2) < 0));
+    }
   else if (op[0] == '!' && op[1] == '=' && op[2] == '\0')
     return (patmatch ? patcomp (arg1, arg2, NE) : (STREQ (arg1, arg2) == 0));
+    
 
   else if (op[2] == 't')
     {
@@ -659,7 +664,7 @@ int
 test_unop (op)
      char *op;
 {
-  if (op[0] != '-')
+  if (op[0] != '-' || op[2] != 0)
     return (0);
 
   switch (op[1])

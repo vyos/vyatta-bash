@@ -66,6 +66,8 @@ trap '' USR2
 # test ERR trap
 ./trap2.sub
 
+${THIS_SH} ./trap3.sub
+
 #
 # show that setting a trap on SIGCHLD is not disastrous.
 #
@@ -75,6 +77,7 @@ trap 'echo caught a child death' SIGCHLD
 
 sleep 7 & sleep 6 & sleep 5 &
 
+# this will only catch the first, since there's a trap on SIGCHLD
 wait
 
 trap -p SIGCHLD
@@ -84,3 +87,7 @@ trap -p SIGCHLD
 trap - SIGINT QUIT TERM
 
 trap
+
+trap - SIGCHLD
+wait
+
