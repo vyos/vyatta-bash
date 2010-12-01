@@ -1503,20 +1503,15 @@ programmable_completions (cmd, word, start, end, foundp)
     {
       retry = 0;
 
-      if (in_vyatta_restricted_mode(OUTPUT) && strcmp(cmd, word) == 0) {
-	/* command completion */
-	ret = gen_progcomp_completions ("", cmd, word, start, end, &found, &retry, &lastcs);
-      } else {
-	/* We look at the basename of CMD if the full command does not have
-	   an associated COMPSPEC. */
-	ret = gen_progcomp_completions (cmd, cmd, word, start, end, &found, &retry, &lastcs);
-	if (found == 0)
-	  {
-	    t = strrchr (cmd, '/');
-	    if (t && *(++t))
-	      ret = gen_progcomp_completions (t, cmd, word, start, end, &found, &retry, &lastcs);
-	  }
-      }
+      /* We look at the basename of CMD if the full command does not have
+	 an associated COMPSPEC. */
+      ret = gen_progcomp_completions (cmd, cmd, word, start, end, &found, &retry, &lastcs);
+      if (found == 0)
+	{
+	  t = strrchr (cmd, '/');
+	  if (t && *(++t))
+	    ret = gen_progcomp_completions (t, cmd, word, start, end, &found, &retry, &lastcs);
+	}
 
       if (found == 0)
 	ret = gen_progcomp_completions (DEFAULTCMD, cmd, word, start, end, &found, &retry, &lastcs);
