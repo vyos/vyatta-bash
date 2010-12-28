@@ -1,3 +1,9 @@
+vyatta-bash (4.1-3-vyatta3) unstable; urgency=low
+
+  * new branch
+
+ -- An-Cheng Huang <ancheng@vyatta.com>  Tue, 28 Dec 2010 20:45:04 +0000
+
 vyatta-bash (4.1-3-vyatta2) unstable; urgency=low
 
   * Remove Vyatta mods to allow empty command completion
