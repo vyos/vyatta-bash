@@ -5614,8 +5614,14 @@ handle_eof_input_unit ()
 	{
 	  if (eof_encountered < eof_encountered_limit)
 	    {
-	      fprintf (stderr, _("Use \"%s\" to leave the shell.\n"),
+              char *vyatta_configure_mode = getenv ( "_OFR_CONFIGURE" );
+              if (*vyatta_configure_mode != NULL) {
+	        fprintf (stderr, _("Use \"%s\" to leave configuration mode.\n"),
 		       login_shell ? "logout" : "exit");
+              } else {
+	        fprintf (stderr, _("Use \"%s\" to leave the shell.\n"),
+		       login_shell ? "logout" : "exit");
+              }
 	      eof_encountered++;
 	      /* Reset the parsing state. */
 	      last_read_token = current_token = '\n';
