@@ -1,3 +1,10 @@
+vyatta-bash (4.1-3-vyatta6) unstable; urgency=low
+
+  * Bugfix 6828: Make bash print a friendly message when exiting
+    configuration mode with ctrl+d
+
+ -- John Southworth <john.southworth@vyatta.com>  Tue, 26 Jul 2011 20:01:11 -0700
+
 vyatta-bash (4.1-3-vyatta5) unstable; urgency=low
 
   * new branch
