@@ -47,6 +47,9 @@ extern void sys_error __P((const char *, ...))  __attribute__((__format__ (print
 /* Report an internal error. */
 extern void internal_error __P((const char *, ...))  __attribute__((__format__ (printf, 1, 2)));
 
+/* Report an invalid command. */
+extern void invalid_cmd __P((const char *, ...))  __attribute__((__format__ (printf, 1, 2)));
+
 /* Report an internal warning. */
 extern void internal_warning __P((const char *, ...))  __attribute__((__format__ (printf, 1, 2)));
 
