@@ -1,3 +1,10 @@
+vyatta-bash (4.1-3-vyatta7) unstable; urgency=low
+
+  * Bugfix 2823: change output of invalid commands so that they will
+    integrate into our system seamlessly
+
+ -- John Southworth <john.southworth@vyatta.com>  Fri, 29 Jul 2011 20:43:12 -0700
+
 vyatta-bash (4.1-3-vyatta6) unstable; urgency=low
 
   * Bugfix 6828: Make bash print a friendly message when exiting
