@@ -1,3 +1,10 @@
+vyatta-bash (4.1-3-vyatta8) unstable; urgency=low
+
+  * Make restricted mode 'Invalid command' message match non restricted
+    mode
+
+ -- John Southworth <john.southworth@vyatta.com>  Mon, 01 Aug 2011 20:06:31 -0500
+
 vyatta-bash (4.1-3-vyatta7) unstable; urgency=low
 
   * Bugfix 2823: change output of invalid commands so that they will
