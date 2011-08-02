@@ -239,7 +239,23 @@ parse_command ()
   if (interactive && in_vyatta_restricted_mode(FULL)
       && current_readline_line) {
     if (!is_vyatta_command(current_readline_line, global_command)) {
-      printf("Invalid command\n");
+      char *start = current_readline_line;
+      char *end = NULL;
+      char *cmd = NULL;
+      int cmdlen = 0;
+      while (*start && (whitespace(*start) || *start == '\n')) {
+        start++;
+      }
+      end = start;
+      while (*end && (!whitespace(*end) && *end != '\n')) {
+        end++;
+      }
+      cmdlen = end-start;
+      cmd = malloc(cmdlen+1);
+      bzero(cmd,cmdlen+1);
+      strncpy(cmd, start, cmdlen);
+
+      printf("\n  Invalid command: [%s]\n\n", cmd);
       current_readline_line_index = 0;
       current_readline_line[0] = '\n';
       current_readline_line[1] = '\0';
