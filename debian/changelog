@@ -1,3 +1,9 @@
+vyatta-bash (4.1-3-vyatta10+pacifica1) unstable; urgency=low
+
+  * new branch
+
+ -- John Southworth <john.southworth@vyatta.com>  Fri, 12 Oct 2012 18:45:39 -0700
+
 vyatta-bash (4.1-3-vyatta10) unstable; urgency=low
 
   * new branch
