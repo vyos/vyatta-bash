@@ -3,7 +3,7 @@ Section: base
 Priority: optional
 Maintainer: Vyatta Package Maintainers <maintainers@vyatta.com>
 Standards-Version: 3.6.2
-Build-Depends: autoconf, patch, bison, libncurses5-dev, autotools-dev,
+Build-Depends: autoconf, hostname, patch, bison, libncurses5-dev, autotools-dev,
  debhelper (>= 5), locales
 
 Package: vyatta-bash
