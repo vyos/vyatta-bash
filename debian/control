@@ -1,7 +1,7 @@
 Source: vyatta-bash
 Section: base
 Priority: optional
-Maintainer: Vyatta Package Maintainers <maintainers@vyatta.com>
+Maintainer: VyOS Package Maintainers <maintainers@vyos.net>
 Standards-Version: 3.6.2
 Build-Depends: autoconf, patch, bison, libncurses5-dev, autotools-dev,
  debhelper (>= 5), locales
@@ -12,8 +12,8 @@ Pre-Depends: ${shlibs:Pre-Depends}
 Depends: base-files (>= 2.1.12), debianutils (>= 2.15), bash (>= 3.1)
 Section: shells
 Priority: optional
-Description: The Vyatta Shell based on GNU bash
- The Vyatta Shell based on GNU Bourne Again SHell.
+Description: The VyOS Shell based on GNU bash
+ The VyOS Shell based on GNU Bourne Again SHell.
  .
  Bash is an sh-compatible command language interpreter that executes
  commands read from the standard input or from a file.  Bash also
