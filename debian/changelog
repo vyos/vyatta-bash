@@ -1,3 +1,9 @@
+vyatta-bash (4.1-3+vyos1+helium3) unstable; urgency=low
+
+  * CVE-2014-6271: Import patch by Chet Ramey.
+
+ -- Daniil Baturin <daniil@baturin.org>  Thu, 25 Sep 2014 20:21:46 +0200
+
 vyatta-bash (4.1-3+vyos1+helium2) unstable; urgency=low
 
   * Update maintainer address.
