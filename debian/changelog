@@ -1,3 +1,10 @@
+vyatta-bash (4.1-3+vyos1+helium5) unstable; urgency=low
+
+  [ Alex Harpin ]
+  * vyatta-bash: import patch from Redhat for CVE-2014-7169
+
+ -- Alex Harpin <development@landsofshadow.co.uk>  Sun, 30 Nov 2014 21:45:43 +0000
+ 
 vyatta-bash (4.1-3+vyos1+helium4) unstable; urgency=low
 
   * Another shellshock patch by Chet Ramey.
