@@ -1,9 +1,15 @@
-vyatta-bash (4.1-3+vyos2+lithium3) unstable; urgency=low
+vyatta-bash (4.1-3+vyos2+current2) unstable; urgency=medium
+
+  * Force release
+
+ -- Kim Hagen <kim.sidney@gmail.com>  Sun, 24 Jan 2016 14:43:04 -0500
+
+vyatta-bash (4.1-3+vyos2+current1) unstable; urgency=low
 
   * vyatta-bash: update dh_gencontrol with new development build flag
 
- -- Alex Harpin <development@landsofshadow.co.uk>  Mon, 15 Jun 2015 07:11:58 +0100
- 
+ -- Alex Harpin <khagen@vyos.rbbnet.net>  Sun, 24 Jan 2016 14:40:05 -0500
+
 vyatta-bash (4.1-3+vyos2+lithium2) unstable; urgency=low
 
   * Force release
