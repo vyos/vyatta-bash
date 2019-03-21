@@ -9,7 +9,7 @@ fi
 
 if [ "$PS1" ]; then
   if [ "$BASH" ]; then
-    PS1='${debian_chroot:+($debian_chroot)}\u@\h:\w\$ '
+    PS1='${debian_chroot:+($debian_chroot)}\u@\H:\w\$ '
     if [ -f /etc/bash.bashrc ]; then
         . /etc/bash.bashrc
     fi
