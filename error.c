@@ -1,6 +1,6 @@
 /* error.c -- Functions for handling errors. */
 
-/* Copyright (C) 1993-2009 Free Software Foundation, Inc.
+/* Copyright (C) 1993-2021 Free Software Foundation, Inc.
 
    This file is part of GNU Bash, the Bourne Again SHell.
 
@@ -44,6 +44,7 @@ extern int errno;
 #include "bashintl.h"
 
 #include "shell.h"
+#include "execute_cmd.h"
 #include "flags.h"
 #include "input.h"
 
@@ -51,20 +52,18 @@ extern int errno;
 #  include "bashhist.h"
 #endif
 
-extern int executing_line_number __P((void));
+extern int executing_line_number PARAMS((void));
 
-extern int last_command_exit_value;
-extern char *shell_name;
 #if defined (JOB_CONTROL)
 extern pid_t shell_pgrp;
-extern int give_terminal_to __P((pid_t, int));
+extern int give_terminal_to PARAMS((pid_t, int));
 #endif /* JOB_CONTROL */
 
 #if defined (ARRAY_VARS)
 extern const char * const bash_badsub_errmsg;
 #endif
 
-static void error_prolog __P((int));
+static void error_prolog PARAMS((int));
 
 /* The current maintainer of the shell.  You change this in the
    Makefile. */
@@ -200,7 +199,11 @@ report_error (format, va_alist)
 
   va_end (args);
   if (exit_immediately_on_error)
-    exit_shell (1);
+    {
+      if (last_command_exit_value == 0)
+	last_command_exit_value = EXECUTION_FAILURE;
+      exit_shell (last_command_exit_value);
+    }
 }
 
 void
@@ -246,6 +249,7 @@ internal_error (format, va_alist)
   va_end (args);
 }
 
+void
 #if defined (PREFER_STDARG)
 invalid_cmd (const char *format, ...)
 #else
@@ -255,6 +259,8 @@ invalid_cmd (format, va_alist)
 #endif
 {
   va_list args;
+
+  error_prolog (1);
 
   SH_VA_START (args, format);
 
@@ -284,6 +290,55 @@ internal_warning (format, va_alist)
   fprintf (stderr, "\n");
 
   va_end (args);
+}
+
+void
+#if defined (PREFER_STDARG)
+internal_inform (const char *format, ...)
+#else
+internal_inform (format, va_alist)
+     const char *format;
+     va_dcl
+#endif
+{
+  va_list args;
+
+  error_prolog (1);
+  /* TRANSLATORS: this is a prefix for informational messages. */
+  fprintf (stderr, _("INFORM: "));
+
+  SH_VA_START (args, format);
+
+  vfprintf (stderr, format, args);
+  fprintf (stderr, "\n");
+
+  va_end (args);
+}
+
+void
+#if defined (PREFER_STDARG)
+internal_debug (const char *format, ...)
+#else
+internal_debug (format, va_alist)
+     const char *format;
+     va_dcl
+#endif
+{
+#ifdef DEBUG
+  va_list args;
+
+  error_prolog (1);
+  fprintf (stderr, _("DEBUG warning: "));
+
+  SH_VA_START (args, format);
+
+  vfprintf (stderr, format, args);
+  fprintf (stderr, "\n");
+
+  va_end (args);
+#else
+  return;
+#endif
 }
 
 void
@@ -354,6 +409,36 @@ parser_error (lineno, format, va_alist)
 }
 
 #ifdef DEBUG
+/* This assumes ASCII and is suitable only for debugging */
+char *
+strescape (str)
+     const char *str;
+{
+  char *r, *result;
+  unsigned char *s;
+
+  r = result = (char *)xmalloc (strlen (str) * 2 + 1);
+
+  for (s = (unsigned char *)str; s && *s; s++)
+    {
+      if (*s < ' ')
+	{
+	  *r++ = '^';
+	  *r++ = *s+64;
+	}
+      else if (*s == 127)
+	{
+	  *r++ = '^';
+	  *r++ = '?';
+	}
+     else
+	*r++ = *s;
+    }
+
+  *r = '\0';
+  return result;
+}
+
 void
 #if defined (PREFER_STDARG)
 itrace (const char *format, ...)

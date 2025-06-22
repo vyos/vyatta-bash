@@ -1,4 +1,22 @@
-/* getconf.h -- replacement definitions for ones the system doesn't provide. */
+/*
+   Copyright (C) 2021 Free Software Foundation, Inc.
+   
+   This file is part of GNU Bash.
+   Bash is free software: you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation, either version 3 of the License, or
+   (at your option) any later version.
+
+   Bash is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with Bash.  If not, see <http://www.gnu.org/licenses/>.
+*/
+/* getconf.h -- replacement definitions for ones the system doesn't provide
+   and don't appear in <typemax.h> */
 
 #ifndef _GETCONF_H
 #define _GETCONF_H
@@ -77,138 +95,42 @@
 #  define _POSIX2_RE_DUP_MAX      255
 #endif
 
-/* configurable system variables */
-#if !defined (HAVE_SYSCONF)
-
-#ifndef _SC_ARG_MAX
-#  define _SC_ARG_MAX              1
-#  define _SC_CHILD_MAX            2
-#  define _SC_CLK_TCK              3
-#  define _SC_NGROUPS_MAX          4
-#  define _SC_OPEN_MAX             5
-#  define _SC_JOB_CONTROL          6
-#  define _SC_SAVED_IDS            7
-#  define _SC_VERSION              8
-#  define _SC_BC_BASE_MAX          9
-#  define _SC_BC_DIM_MAX          10
-#  define _SC_BC_SCALE_MAX        11
-#  define _SC_BC_STRING_MAX       12
-#  define _SC_COLL_WEIGHTS_MAX    13
-#  define _SC_EXPR_NEST_MAX       14
-#  define _SC_LINE_MAX            15
-#  define _SC_RE_DUP_MAX          16
-#if 0
-#  define _SC_2_VERSION           17
-#  define _SC_2_C_BIND            18
-#  define _SC_2_C_DEV             19
-#  define _SC_2_CHAR_TERM         20
-#  define _SC_2_FORT_DEV          21
-#  define _SC_2_FORT_RUN          22
-#  define _SC_2_LOCALEDEF         23
-#  define _SC_2_SW_DEV            24
-#  define _SC_2_UPE               25
-#endif /* 0 */
-
-#  define _SC_STREAM_MAX          26
-#  define _SC_TZNAME_MAX          27
-#endif /* !_SC_ARG_MAX */
-
-#endif /* !HAVE_SYSCONF */
-
-/* configurable pathname variables */
-#if !defined (HAVE_PATHCONF)
-
-#ifndef _PC_LINK_MAX
-#define _PC_LINK_MAX             1
-#define _PC_MAX_CANON            2
-#define _PC_MAX_INPUT            3
-#define _PC_NAME_MAX             4
-#define _PC_PATH_MAX             5
-#define _PC_PIPE_BUF             6
-#define _PC_CHOWN_RESTRICTED     7
-#define _PC_NO_TRUNC             8
-#define _PC_VDISABLE             9
-#endif /* !_PC_LINK_MAX */
-
-#endif /* !HAVE_PATHCONF */
-
 #endif /* _POSIX_VERSION */
 
-#ifndef _CS_PATH
-#  define _CS_PATH	1
-#endif
+/* ANSI/ISO C, POSIX.1-200x, XPG 4.2, and C language type limits.
+   Defined only if the system include files and <typemax.h> don't. */
 
-/* ANSI/ISO C, POSIX.1-200x, XPG 4.2 (and later) C language type limits.
-   Defined only if the system include files don't.  Assume a 32-bit
-   environment with signed 8-bit characters. */
-
-#ifndef CHAR_BIT
-#  define CHAR_BIT	8
-#endif
 #ifndef CHAR_MAX
 #  define CHAR_MAX	127
 #endif
 #ifndef CHAR_MIN
 #  define CHAR_MIN	-128
 #endif
+#ifndef SCHAR_MAX
+#  define SCHAR_MAX	127
+#endif
+#ifndef SCHAR_MIN
+#  define SCHAR_MIN	-128
+#endif
 
 #ifndef INT_BIT
 #  define INT_BIT	(sizeof (int) * CHAR_BIT)
-#endif
-#ifndef INT_MAX
-#  define INT_MAX	2147483647
-#endif
-#ifndef INT_MIN
-#  define INT_MIN	(-2147483647-1)
 #endif
 
 #ifndef LONG_BIT
 #  define LONG_BIT	(sizeof (long int) * CHAR_BIT)
 #endif
-#ifndef LONG_MAX
-#  define LONG_MAX	2147483647L
-#endif
-#ifndef LONG_MIN
-#  define LONG_MIN	(-2147483647L-1L)
-#endif
-
-#ifndef SCHAR_MAX
-#  define SCHAR_MAX	CHAR_MAX
-#endif
-#ifndef SCHAR_MIN
-#  define SCHAR_MIN	CHAR_MIN
-#endif
-
-#ifndef SHRT_MAX
-#  define SHRT_MAX	32767
-#endif
-#ifndef SHRT_MIN
-#  define SHRT_MIN	(-32768)
-#endif
-
-#ifndef UCHAR_MAX
-#  define UCHAR_MAX	255
-#endif
-#ifndef UINT_MAX
-#  define UINT_MAX	4294967295U
-#endif
-#ifndef ULONG_MAX
-#  define ULONG_MAX	4294967295UL
-#endif
-#ifndef USHRT_MAX
-#  define UCHAR_MAX	65535
-#endif
-
-/* assume size_t is `unsigned int'; ssize_t is `int' */
-#ifndef SIZE_MAX
-#  define SIZE_MAX	UINT_MAX
-#endif
-#ifndef SSIZE_MAX
-#  define SSIZE_MAX	INT_MAX
-#endif
 
 #ifndef WORD_BIT
 #  define WORD_BIT	(sizeof (int) * CHAR_BIT)
+#endif
+
+#if !defined (PRIdMAX)
+#  if HAVE_LONG_LONG
+#    define PRIdMAX     "lld"
+#  else
+#    define PRIdMAX     "ld"
+#  endif
 #endif
 
 #endif /* _GETCONF_H */

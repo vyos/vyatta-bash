@@ -1,0 +1,23 @@
+#! /bin/bash
+
+set -e
+
+case "$1" in
+    upgrade)
+	;;
+
+    remove|deconfigure)
+        if [ -x /usr/sbin/remove-shell ] && [ -f /etc/shells ]; then
+            /usr/sbin/remove-shell /bin/vbash
+        fi
+	;;
+
+    failed-upgrade)
+	;;
+    *)
+        echo "prerm called with unknown argument \`$1'" >&2
+        exit 1
+	;;
+esac
+
+#DEBHELPER#

@@ -1,6 +1,6 @@
 /* mailcheck.c -- The check is in the mail... */
 
-/* Copyright (C) 1987-2009 Free Software Foundation, Inc.
+/* Copyright (C) 1987-2020 Free Software Foundation, Inc.
 
    This file is part of GNU Bash, the Bourne Again SHell.
 
@@ -23,7 +23,7 @@
 #include <stdio.h>
 #include "bashtypes.h"
 #include "posixstat.h"
-#ifndef _MINIX
+#if defined (HAVE_SYS_PARAM_H)
 #  include <sys/param.h>
 #endif
 #if defined (HAVE_UNISTD_H)
@@ -43,7 +43,7 @@
 
 extern time_t shell_start_time;
 
-extern int mailstat __P((const char *, struct stat *));
+extern int mailstat PARAMS((const char *, struct stat *));
 
 typedef struct _fileinfo {
   char *name;
@@ -66,19 +66,19 @@ static time_t last_time_mail_checked = 0;
 /* Non-zero means warn if a mail file has been read since last checked. */
 int mail_warning;
 
-static int find_mail_file __P((char *));
-static void init_mail_file __P((int));
-static void update_mail_file __P((int));
-static int add_mail_file __P((char *, char *));
+static int find_mail_file PARAMS((char *));
+static void init_mail_file PARAMS((int));
+static void update_mail_file PARAMS((int));
+static int add_mail_file PARAMS((char *, char *));
 
-static FILEINFO *alloc_mail_file __P((char *, char *));
-static void dispose_mail_file __P((FILEINFO *));
+static FILEINFO *alloc_mail_file PARAMS((char *, char *));
+static void dispose_mail_file PARAMS((FILEINFO *));
 
-static int file_mod_date_changed __P((int));
-static int file_access_date_changed __P((int));
-static int file_has_grown __P((int));
+static int file_mod_date_changed PARAMS((int));
+static int file_access_date_changed PARAMS((int));
+static int file_has_grown PARAMS((int));
 
-static char *parse_mailpath_spec __P((char *));
+static char *parse_mailpath_spec PARAMS((char *));
 
 /* Returns non-zero if it is time to check mail. */
 int
@@ -267,7 +267,10 @@ file_mod_date_changed (i)
   file = mailfiles[i]->name;
   mtime = mailfiles[i]->mod_time;
 
-  if ((mailstat (file, &finfo) == 0) && (finfo.st_size > 0))
+  if (mailstat (file, &finfo) != 0)
+    return (0);
+
+  if (finfo.st_size > 0)
     return (mtime < finfo.st_mtime);
 
   if (finfo.st_size == 0 && mailfiles[i]->file_size > 0)
@@ -288,7 +291,10 @@ file_access_date_changed (i)
   file = mailfiles[i]->name;
   atime = mailfiles[i]->access_time;
 
-  if ((mailstat (file, &finfo) == 0) && (finfo.st_size > 0))
+  if (mailstat (file, &finfo) != 0)
+    return (0);
+
+  if (finfo.st_size > 0)
     return (atime < finfo.st_atime);
 
   return (0);

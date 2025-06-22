@@ -63,6 +63,12 @@
 
 extern char *xmalloc PARAMS((size_t));
 
+void initialize_readline PARAMS((void));
+void too_dangerous PARAMS((char *));
+
+int execute_line PARAMS((char *));
+int valid_argument PARAMS((char *, char *));
+
 /* The names of functions that actually do the manipulation. */
 int com_list PARAMS((char *));
 int com_view PARAMS((char *));
@@ -119,6 +125,7 @@ dupstr (s)
   return (r);
 }
 
+int
 main (argc, argv)
      int argc;
      char **argv;
@@ -241,6 +248,7 @@ char **fileman_completion PARAMS((const char *, int, int));
 /* Tell the GNU Readline library how to complete.  We want to try to complete
    on command names if this is the first word in the line, or on filenames
    if not. */
+void
 initialize_readline ()
 {
   /* Allow conditional parsing of the ~/.inputrc file. */
@@ -317,6 +325,7 @@ command_generator (text, state)
 static char syscom[1024];
 
 /* List the file(s) named in arg. */
+int
 com_list (arg)
      char *arg;
 {
@@ -327,6 +336,7 @@ com_list (arg)
   return (system (syscom));
 }
 
+int
 com_view (arg)
      char *arg;
 {
@@ -342,6 +352,7 @@ com_view (arg)
   return (system (syscom));
 }
 
+int
 com_rename (arg)
      char *arg;
 {
@@ -349,6 +360,7 @@ com_rename (arg)
   return (1);
 }
 
+int
 com_stat (arg)
      char *arg;
 {
@@ -365,11 +377,11 @@ com_stat (arg)
 
   printf ("Statistics for `%s':\n", arg);
 
-  printf ("%s has %d link%s, and is %d byte%s in length.\n",
+  printf ("%s has %d link%s, and is %lu byte%s in length.\n",
 	  arg,
           finfo.st_nlink,
           (finfo.st_nlink == 1) ? "" : "s",
-          finfo.st_size,
+          (unsigned long)finfo.st_size,
           (finfo.st_size == 1) ? "" : "s");
   printf ("Inode Last Change at: %s", ctime (&finfo.st_ctime));
   printf ("      Last access at: %s", ctime (&finfo.st_atime));
@@ -377,6 +389,7 @@ com_stat (arg)
   return (0);
 }
 
+int
 com_delete (arg)
      char *arg;
 {
@@ -386,6 +399,7 @@ com_delete (arg)
 
 /* Print out help for ARG, or for all of the commands if ARG is
    not present. */
+int
 com_help (arg)
      char *arg;
 {
@@ -403,7 +417,7 @@ com_help (arg)
 
   if (!printed)
     {
-      printf ("No commands match `%s'.  Possibilties are:\n", arg);
+      printf ("No commands match `%s'.  Possibilities are:\n", arg);
 
       for (i = 0; commands[i].name; i++)
         {
@@ -425,6 +439,7 @@ com_help (arg)
 }
 
 /* Change to the directory ARG. */
+int
 com_cd (arg)
      char *arg;
 {
@@ -439,6 +454,7 @@ com_cd (arg)
 }
 
 /* Print out the current working directory. */
+int
 com_pwd (ignore)
      char *ignore;
 {
@@ -456,6 +472,7 @@ com_pwd (ignore)
 }
 
 /* The user wishes to quit using this program.  Just set DONE non-zero. */
+int
 com_quit (arg)
      char *arg;
 {
@@ -464,6 +481,7 @@ com_quit (arg)
 }
 
 /* Function which tells you that you can't do this. */
+void
 too_dangerous (caller)
      char *caller;
 {

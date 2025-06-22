@@ -63,6 +63,7 @@ static void uprint();
 
 static int uname_flags;
 
+int
 uname_builtin (list)
      WORD_LIST *list;
 {
@@ -94,6 +95,7 @@ uname_builtin (list)
 	case 'v':
 	  uname_flags |= FLAG_VERSION;
 	  break;
+	CASE_HELPOPT;
 	default:
 	  builtin_usage ();
 	  return (EX_USAGE);

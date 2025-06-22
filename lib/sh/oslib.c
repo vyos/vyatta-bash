@@ -1,6 +1,6 @@
 /* oslib.c - functions present only in some unix versions. */
 
-/* Copyright (C) 1995 Free Software Foundation, Inc.
+/* Copyright (C) 1995,2010 Free Software Foundation, Inc.
 
    This file is part of GNU Bash, the Bourne Again SHell.
 
@@ -21,7 +21,7 @@
 #include <config.h>
 
 #include <bashtypes.h>
-#ifndef _MINIX
+#if defined (HAVE_SYS_PARAM_H)
 #  include <sys/param.h>
 #endif
 
@@ -36,6 +36,10 @@
 #include <posixstat.h>
 #include <filecntl.h>
 #include <bashansi.h>
+
+#if !defined (HAVE_KILLPG)
+#  include <signal.h>
+#endif
 
 #include <stdio.h>
 #include <errno.h>
@@ -120,7 +124,7 @@ dup2 (fd1, fd2)
 /*
  * Return the total number of available file descriptors.
  *
- * On some systems, like 4.2BSD and its descendents, there is a system call
+ * On some systems, like 4.2BSD and its descendants, there is a system call
  * that returns the size of the descriptor table: getdtablesize().  There are
  * lots of ways to emulate this on non-BSD systems.
  *
@@ -163,8 +167,8 @@ getdtablesize ()
 #  endif
 void
 bcopy (s,d,n)
-     char *d, *s;
-     int n;
+     void *d, *s;
+     size_t n;
 {
   FASTCOPY (s, d, n);
 }
@@ -176,8 +180,8 @@ bcopy (s,d,n)
 #  endif
 void
 bzero (s, n)
-     char *s;
-     int n;
+     void *s; 
+     size_t n;
 {
   register int i;
   register char *r;
@@ -193,7 +197,7 @@ bzero (s, n)
 int
 gethostname (name, namelen)
      char *name;
-     int namelen;
+     size_t namelen;
 {
   int i;
   struct utsname ut;
@@ -209,7 +213,8 @@ gethostname (name, namelen)
 #  else /* !HAVE_UNAME */
 int
 gethostname (name, namelen)
-     int name, namelen;
+     char *name;
+     size_t namelen;
 {
   strncpy (name, "unknown", namelen);
   name[namelen] = '\0';
@@ -232,7 +237,7 @@ killpg (pgrp, sig)
 int
 mkfifo (path, mode)
      char *path;
-     int mode;
+     mode_t mode;
 {
 #if defined (S_IFIFO)
   return (mknod (path, (mode | S_IFIFO), 0));

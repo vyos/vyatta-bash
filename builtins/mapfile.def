@@ -2,7 +2,7 @@ This file is mapfile.def, from which is created mapfile.c.
 It implements the builtin "mapfile" in Bash.
 
 Copyright (C) 2005-2006 Rocky Bernstein for Free Software Foundation, Inc.
-Copyright (C) 2008,2009 Free Software Foundation, Inc.
+Copyright (C) 2008-2021 Free Software Foundation, Inc.
 
 This file is part of GNU Bash, the Bourne Again SHell.
 
@@ -23,7 +23,7 @@ $PRODUCES mapfile.c
 
 $BUILTIN mapfile
 $FUNCTION mapfile_builtin
-$SHORT_DOC mapfile [-n count] [-O origin] [-s count] [-t] [-u fd] [-C callback] [-c quantum] [array]
+$SHORT_DOC mapfile [-d delim] [-n count] [-O origin] [-s count] [-t] [-u fd] [-C callback] [-c quantum] [array]
 Read lines from the standard input into an indexed array variable.
 
 Read lines from the standard input into the indexed array variable ARRAY, or
@@ -31,20 +31,23 @@ from file descriptor FD if the -u option is supplied.  The variable MAPFILE
 is the default ARRAY.
 
 Options:
-  -n count	Copy at most COUNT lines.  If COUNT is 0, all lines are copied.
-  -O origin	Begin assigning to ARRAY at index ORIGIN.  The default index is 0.
-  -s count 	Discard the first COUNT lines read.
-  -t		Remove a trailing newline from each line read.
-  -u fd		Read lines from file descriptor FD instead of the standard input.
-  -C callback	Evaluate CALLBACK each time QUANTUM lines are read.
-  -c quantum	Specify the number of lines read between each call to CALLBACK.
+  -d delim	Use DELIM to terminate lines, instead of newline
+  -n count	Copy at most COUNT lines.  If COUNT is 0, all lines are copied
+  -O origin	Begin assigning to ARRAY at index ORIGIN.  The default index is 0
+  -s count	Discard the first COUNT lines read
+  -t	Remove a trailing DELIM from each line read (default newline)
+  -u fd	Read lines from file descriptor FD instead of the standard input
+  -C callback	Evaluate CALLBACK each time QUANTUM lines are read
+  -c quantum	Specify the number of lines read between each call to
+			CALLBACK
 
 Arguments:
-  ARRAY		Array variable name to use for file data.
+  ARRAY	Array variable name to use for file data
 
 If -C is supplied without -c, the default quantum is 5000.  When
 CALLBACK is evaluated, it is supplied the index of the next array
-element to be assigned as an additional argument.
+element to be assigned and the line to be assigned to that element
+as additional arguments.
 
 If not supplied with an explicit origin, mapfile will clear ARRAY before
 assigning to it.
@@ -56,7 +59,7 @@ $END
 
 $BUILTIN readarray
 $FUNCTION mapfile_builtin
-$SHORT_DOC readarray [-n count] [-O origin] [-s count] [-t] [-u fd] [-C callback] [-c quantum] [array]
+$SHORT_DOC readarray [-d delim] [-n count] [-O origin] [-s count] [-t] [-u fd] [-C callback] [-c quantum] [array]
 Read lines from a file into an array variable.
 
 A synonym for `mapfile'.
@@ -65,6 +68,7 @@ $END
 #include <config.h>
 
 #include "builtins.h"
+#include "../bashtypes.h"
 #include "posixstat.h"
 
 #if defined (HAVE_UNISTD_H)
@@ -88,7 +92,10 @@ extern int errno;
 
 #if defined (ARRAY_VARS)
 
+static int run_callback PARAMS((const char *, unsigned int, const char *));
+
 #define DEFAULT_ARRAY_NAME	"MAPFILE"
+#define DEFAULT_VARIABLE_NAME	"MAPLINE"	/* not used right now */
 
 /* The value specifying how frequently `mapfile'  calls the callback. */
 #define DEFAULT_QUANTUM 5000
@@ -97,19 +104,23 @@ extern int errno;
 #define MAPF_CLEARARRAY	0x01
 #define MAPF_CHOP	0x02
 
+static int delim;
+
 static int
-run_callback(callback, current_index)
+run_callback (callback, curindex, curline)
      const char *callback;
-     unsigned int current_index;
+     unsigned int curindex;
+     const char *curline;
 {
   unsigned int execlen;
-  char  *execstr;
+  char  *execstr, *qline;
   int flags;
 
-  execlen = strlen (callback) + 10;
-  /* 1 for space between %s and %d,
+  qline = sh_single_quote (curline);
+  execlen = strlen (callback) + strlen (qline) + 10;
+  /* 1 for each space between %s and %d,
      another 1 for the last nul char for C string. */
-  execlen += 2;
+  execlen += 3;
   execstr = xmalloc (execlen);
 
   flags = SEVAL_NOHIST;
@@ -117,32 +128,36 @@ run_callback(callback, current_index)
   if (interactive)
     flags |= SEVAL_INTERACT;
 #endif
-  snprintf (execstr, execlen, "%s %d", callback, current_index);
-  return parse_and_execute(execstr, NULL, flags);
+  snprintf (execstr, execlen, "%s %d %s", callback, curindex, qline);
+  free (qline);
+  return evalstring (execstr, NULL, flags);
 }
 
 static void
-do_chop(line)
-     char * line;
+do_chop(line, delim)
+     char *line;
+     unsigned char delim;
 {
   int length;
 
   length = strlen (line);
-  if (length && line[length-1] == '\n') 
+  if (length && (unsigned char)line[length-1] == delim) 
     line[length-1] = '\0';
 }
 
 static int
-mapfile (fd, line_count_goal, origin, nskip, callback_quantum, callback, array_name, flags)
+mapfile (fd, line_count_goal, origin, nskip, callback_quantum, callback, array_name, delim, flags)
      int fd;
      long line_count_goal, origin, nskip, callback_quantum;
      char *callback, *array_name;
+     int delim;
      int flags;
 {
   char *line;
   size_t line_length;
   unsigned int array_index, line_count;
   SHELL_VAR *entry;
+  struct stat sb;
   int unbuffered_read;
   
   line = NULL;
@@ -152,25 +167,18 @@ mapfile (fd, line_count_goal, origin, nskip, callback_quantum, callback, array_n
   /* The following check should be done before reading any lines.  Doing it
      here allows us to call bind_array_element instead of bind_array_variable
      and skip the variable lookup on every call. */
-  entry = find_or_make_array_variable (array_name, 1);
-  if (entry == 0 || readonly_p (entry) || noassign_p (entry))
-    {
-      if (entry && readonly_p (entry))
-	err_readonly (array_name);
-	
-      return (EXECUTION_FAILURE);
-    }
-  else if (array_p (entry) == 0)
-    {
-      builtin_error (_("%s: not an indexed array"), array_name);
-      return (EXECUTION_FAILURE);
-    }
-      
-  if (flags & MAPF_CLEARARRAY)
-    array_flush (array_cell (entry));
+  entry = builtin_find_indexed_array (array_name, flags & MAPF_CLEARARRAY);
+  if (entry == 0)
+    return EXECUTION_FAILURE;
 
 #ifndef __CYGWIN__
-  unbuffered_read = (lseek (fd, 0L, SEEK_CUR) < 0) && (errno == ESPIPE);
+  /* If the delimiter is a newline, turn on unbuffered reads for pipes
+     (terminals are ok). If the delimiter is not a newline, unbuffered reads
+     for every file descriptor that's not a regular file. */
+  if (delim == '\n')
+    unbuffered_read = (lseek (fd, 0L, SEEK_CUR) < 0) && (errno == ESPIPE);
+  else
+    unbuffered_read = (fstat (fd, &sb) != 0) || (S_ISREG (sb.st_mode) == 0);
 #else
   unbuffered_read = 1;
 #endif
@@ -179,45 +187,46 @@ mapfile (fd, line_count_goal, origin, nskip, callback_quantum, callback, array_n
 
   /* Skip any lines at beginning of file? */
   for (line_count = 0; line_count < nskip; line_count++)
-    if (zgetline (fd, &line, &line_length, unbuffered_read) < 0)
+    if (zgetline (fd, &line, &line_length, delim, unbuffered_read) < 0)
       break;
 
   line = 0;
   line_length = 0;    
 
   /* Reset the buffer for bash own stream */
-  interrupt_immediately++;
   for (array_index = origin, line_count = 1; 
-       zgetline (fd, &line, &line_length, unbuffered_read) != -1;
-       array_index++, line_count++) 
+ 	zgetline (fd, &line, &line_length, delim, unbuffered_read) != -1;
+	array_index++) 
     {
-      /* Have we exceeded # of lines to store? */
-      if (line_count_goal != 0 && line_count > line_count_goal) 
-	break;
-
       /* Remove trailing newlines? */
       if (flags & MAPF_CHOP)
-	do_chop (line);
+	do_chop (line, delim);
 	  
       /* Has a callback been registered and if so is it time to call it? */
       if (callback && line_count && (line_count % callback_quantum) == 0) 
 	{
-	  run_callback (callback, array_index);
-
 	  /* Reset the buffer for bash own stream. */
 	  if (unbuffered_read == 0)
 	    zsyncfd (fd);
+
+	  run_callback (callback, array_index, line);
 	}
 
+      /* XXX - bad things can happen if the callback modifies ENTRY, e.g.,
+	 unsetting it or changing it to a non-indexed-array type. */
       bind_array_element (entry, array_index, line, 0);
+
+      /* Have we exceeded # of lines to store? */
+      line_count++;
+      if (line_count_goal != 0 && line_count > line_count_goal) 
+	break;
     }
 
-  xfree (line);
+  free (line);
 
   if (unbuffered_read == 0)
     zsyncfd (fd);
 
-  interrupt_immediately--;
   return EXECUTION_SUCCESS;
 }
 
@@ -225,23 +234,26 @@ int
 mapfile_builtin (list)
      WORD_LIST *list;
 {
-  int opt, code, fd, clear_array, flags;
+  int opt, code, fd, flags;
   intmax_t intval;
   long lines, origin, nskip, callback_quantum;
   char *array_name, *callback;
 
-  clear_array = 1;
   fd = 0;
   lines = origin = nskip = 0;
   flags = MAPF_CLEARARRAY;
   callback_quantum = DEFAULT_QUANTUM;
   callback = 0;
+  delim = '\n';
 
   reset_internal_getopt ();
-  while ((opt = internal_getopt (list, "u:n:O:tC:c:s:")) != -1)
+  while ((opt = internal_getopt (list, "d:u:n:O:tC:c:s:")) != -1)
     {
       switch (opt)
 	{
+	case 'd':
+	  delim = *list_optarg;
+	  break;
 	case 'u':
 	  code = legal_number (list_optarg, &intval);
 	  if (code == 0 || intval < 0 || intval != (int)intval)
@@ -307,6 +319,7 @@ mapfile_builtin (list)
 	  else
 	    nskip = intval;
 	  break;
+	CASE_HELPOPT;
 	default:
 	  builtin_usage ();
 	  return (EX_USAGE);
@@ -329,13 +342,13 @@ mapfile_builtin (list)
   else
     array_name = list->word->word;
   
-  if (legal_identifier (array_name) == 0 && valid_array_reference (array_name) == 0)
+  if (legal_identifier (array_name) == 0)
     {
       sh_invalidid (array_name);
       return (EXECUTION_FAILURE);
     }
 
-  return mapfile (fd, lines, origin, nskip, callback_quantum, callback, array_name, flags);
+  return mapfile (fd, lines, origin, nskip, callback_quantum, callback, array_name, delim, flags);
 }
 
 #else

@@ -1,7 +1,7 @@
 /* make_cmd.c -- Functions for making instances of the various
    parser constructs. */
 
-/* Copyright (C) 1989-2009 Free Software Foundation, Inc.
+/* Copyright (C) 1989-2022 Free Software Foundation, Inc.
 
    This file is part of GNU Bash, the Bourne Again SHell.
 
@@ -34,19 +34,11 @@
 
 #include "bashintl.h"
 
+#include "shell.h"
+#include "execute_cmd.h"
 #include "parser.h"
-#include "syntax.h"
-#include "command.h"
-#include "general.h"
-#include "error.h"
 #include "flags.h"
-#include "make_cmd.h"
-#include "dispose_cmd.h"
-#include "variables.h"
-#include "subst.h"
 #include "input.h"
-#include "ocache.h"
-#include "externs.h"
 
 #if defined (JOB_CONTROL)
 #include "jobs.h"
@@ -54,21 +46,20 @@
 
 #include "shmbutil.h"
 
-extern int line_number, current_command_line_count, parser_state;
-extern int last_command_exit_value;
+int here_doc_first_line = 0;
 
 /* Object caching */
 sh_obj_cache_t wdcache = {0, 0, 0};
 sh_obj_cache_t wlcache = {0, 0, 0};
 
-#define WDCACHESIZE	60
-#define WLCACHESIZE	60
+#define WDCACHESIZE	128
+#define WLCACHESIZE	128
 
-static COMMAND *make_for_or_select __P((enum command_type, WORD_DESC *, WORD_LIST *, COMMAND *, int));
+static COMMAND *make_for_or_select PARAMS((enum command_type, WORD_DESC *, WORD_LIST *, COMMAND *, int));
 #if defined (ARITH_FOR_COMMAND)
-static WORD_LIST *make_arith_for_expr __P((char *));
+static WORD_LIST *make_arith_for_expr PARAMS((char *));
 #endif
-static COMMAND *make_until_or_while __P((enum command_type, COMMAND *, COMMAND *));
+static COMMAND *make_until_or_while PARAMS((enum command_type, COMMAND *, COMMAND *));
 
 void
 cmd_init ()
@@ -244,7 +235,7 @@ make_select_command (name, map_list, action, lineno)
 #if defined (SELECT_COMMAND)
   return (make_for_or_select (cm_select, name, map_list, action, lineno));
 #else
-  last_command_exit_value = 2;
+  set_exit_status (2);
   return ((COMMAND *)NULL);
 #endif
 }
@@ -260,7 +251,7 @@ make_arith_for_expr (s)
   if (s == 0 || *s == '\0')
     return ((WORD_LIST *)NULL);
   wd = make_word (s);
-  wd->flags |= W_NOGLOB|W_NOSPLIT|W_QUOTED|W_DQUOTE;	/* no word splitting or globbing */
+  wd->flags |= W_NOGLOB|W_NOSPLIT|W_QUOTED|W_NOTILDE|W_NOPROCSUB;	/* no word splitting or globbing */
   result = make_word_list (wd, (WORD_LIST *)NULL);
   return result;
 }
@@ -280,7 +271,7 @@ make_arith_for_command (exprs, action, lineno)
   ARITH_FOR_COM *temp;
   WORD_LIST *init, *test, *step;
   char *s, *t, *start;
-  int nsemi;
+  int nsemi, i;
 
   init = test = step = (WORD_LIST *)NULL;
   /* Parse the string into the three component sub-expressions. */
@@ -292,10 +283,10 @@ make_arith_for_command (exprs, action, lineno)
 	s++;
       start = s;
       /* skip to the semicolon or EOS */
-      while (*s && *s != ';')
-	s++;
+      i = skip_to_delim (start, 0, ";", SD_NOJMP|SD_NOPROCSUB);
+      s = start + i;
 
-      t = (s > start) ? substring (start, 0, s - start) : (char *)NULL;
+      t = (i > 0) ? substring (start, 0, i) : (char *)NULL;
 
       nsemi++;
       switch (nsemi)
@@ -324,7 +315,10 @@ make_arith_for_command (exprs, action, lineno)
       else
 	parser_error (lineno, _("syntax error: `;' unexpected"));
       parser_error (lineno, _("syntax error: `((%s))'"), exprs->word->word);
-      last_command_exit_value = 2;
+      free (init);
+      free (test);
+      free (step);
+      set_exit_status (2);
       return ((COMMAND *)NULL);
     }
 
@@ -340,7 +334,7 @@ make_arith_for_command (exprs, action, lineno)
   return (make_command (cm_arith_for, (SIMPLE_COM *)temp));
 #else
   dispose_words (exprs);
-  last_command_exit_value = 2;
+  set_exit_status (2);
   return ((COMMAND *)NULL);
 #endif /* ARITH_FOR_COMMAND */
 }
@@ -450,7 +444,7 @@ make_arith_command (exp)
 
   return (command);
 #else
-  last_command_exit_value = 2;
+  set_exit_status (2);
   return ((COMMAND *)NULL);
 #endif
 }
@@ -493,7 +487,7 @@ make_cond_command (cond_node)
 
   return (command);
 #else
-  last_command_exit_value = 2;
+  set_exit_status (2);
   return ((COMMAND *)NULL);
 #endif
 }
@@ -578,12 +572,19 @@ make_here_document (temp, lineno)
 
   kill_leading = temp->instruction == r_deblank_reading_until;
 
-  document = (char *)NULL;
+  full_line = document = (char *)NULL;
   document_index = document_size = 0;
+
+  delim_unquoted = (temp->redirectee.filename->flags & W_QUOTED) == 0;
 
   /* Quote removal is the only expansion performed on the delimiter
      for here documents, making it an extremely special case. */
-  redir_word = string_quote_removal (temp->redirectee.filename->word, 0);
+  /* "If any part of word is quoted, the delimiter shall be formed by
+     performing quote removal on word." */
+  if (delim_unquoted == 0)
+    redir_word = string_quote_removal (temp->redirectee.filename->word, 0);
+  else
+    redir_word = savestring (temp->redirectee.filename->word);
 
   /* redirection_expand will return NULL if the expansion results in
      multiple words or no words.  Check for that here, and just abort
@@ -610,12 +611,12 @@ make_here_document (temp, lineno)
   /* If the here-document delimiter was quoted, the lines should
      be read verbatim from the input.  If it was not quoted, we
      need to perform backslash-quoted newline removal. */
-  delim_unquoted = (temp->redirectee.filename->flags & W_QUOTED) == 0;
   while (full_line = read_secondary_line (delim_unquoted))
     {
       register char *line;
       int len;
 
+      here_doc_first_line = 0;
       line = full_line;
       line_number++;
 
@@ -630,7 +631,7 @@ make_here_document (temp, lineno)
 	     check the word before stripping the whitespace.  This
 	     is a hack, though. */
 	  if (STREQN (line, redir_word, redir_len) && line[redir_len] == '\n')
-	    goto document_done;
+	    break;
 
 	  while (*line == '\t')
 	    line++;
@@ -640,7 +641,15 @@ make_here_document (temp, lineno)
 	continue;
 
       if (STREQN (line, redir_word, redir_len) && line[redir_len] == '\n')
-	goto document_done;
+	break;
+
+      /* Backwards compatibility here */
+      if (STREQN (line, redir_word, redir_len) && (parser_state & PST_EOFTOKEN) && shell_eof_token && strchr (line+redir_len, shell_eof_token))
+	{
+	  shell_ungets (line + redir_len);
+	  full_line = 0;
+	  break;
+	}
 
       len = strlen (line);
       if (len + document_index >= document_size)
@@ -667,6 +676,7 @@ document_done:
       document[0] = '\0';
     }
   temp->redirectee.filename->word = document;
+  here_doc_first_line = 0;
 }
 
 /* Generate a REDIRECT from SOURCE, DEST, and INSTRUCTION.
@@ -689,6 +699,7 @@ make_redirection (source, instruction, dest_and_filename, flags)
   /* First do the common cases. */
   temp->redirector = source;
   temp->redirectee = dest_and_filename;
+  temp->here_doc_eof = 0;
   temp->instruction = instruction;
   temp->flags = 0;
   temp->rflags = flags;
@@ -786,11 +797,18 @@ make_function_def (name, command, lineno, lstart)
   if (bash_source_a && array_num_elements (bash_source_a) > 0)
     temp->source_file = array_reference (bash_source_a, 0);
 #endif
+  /* Assume that shell functions without a source file before the shell is
+     initialized come from the environment.  Otherwise default to "main"
+     (usually functions being defined interactively) */
+  if (temp->source_file == 0)
+    temp->source_file = shell_initialized ? "main" : "environment";
+
 #if defined (DEBUGGER)
-  bind_function_def (name->word, temp);
+  bind_function_def (name->word, temp, 0);
 #endif
 
-  temp->source_file = 0;
+  temp->source_file = temp->source_file ? savestring (temp->source_file) : 0;
+
   return (make_command (cm_function_def, (SIMPLE_COM *)temp));
 }
 
@@ -803,6 +821,7 @@ make_subshell_command (command)
   temp = (SUBSHELL_COM *)xmalloc (sizeof (SUBSHELL_COM));
   temp->command = command;
   temp->flags = CMD_WANT_SUBSHELL;
+  temp->line = line_number;
   return (make_command (cm_subshell, (SIMPLE_COM *)temp));
 }
 

@@ -1,6 +1,6 @@
 /* mktime - convert struct tm to a time_t value */
 
-/* Copyright (C) 1993-2002 Free Software Foundation, Inc.
+/* Copyright (C) 1993-2020 Free Software Foundation, Inc.
 
    This file is part of GNU Bash, the Bourne Again SHell.
    Contributed by Paul Eggert (eggert@twinsun.com).
@@ -41,8 +41,6 @@
 
 #ifndef VMS
 #include <sys/types.h>		/* Some systems define `time_t' here.  */
-#else
-#include <stddef.h>
 #endif
 #include <time.h>
 
@@ -52,19 +50,19 @@
 
 #include "bashansi.h"
 
-#if DEBUG
+#if DEBUG_MKTIME
 #include <stdio.h>
 /* Make it work even if the system's libc has its own mktime routine.  */
 #define mktime my_mktime
-#endif /* DEBUG */
+#endif /* DEBUG_MKTIME */
 
-#ifndef __P
+#ifndef PARAMS
 #if defined (__GNUC__) || (defined (__STDC__) && __STDC__)
-#define __P(args) args
+#define PARAMS(args) args
 #else
-#define __P(args) ()
+#define PARAMS(args) ()
 #endif  /* GCC.  */
-#endif  /* Not __P.  */
+#endif  /* Not PARAMS.  */
 
 #ifndef CHAR_BIT
 #define CHAR_BIT 8
@@ -77,12 +75,27 @@
 #define INT_MAX (~0 - INT_MIN)
 #endif
 
+/* True if the arithmetic type T is signed.  */
+#define TYPE_SIGNED(t) (! ((t) 0 < (t) -1))
+
+/* The maximum and minimum values for the integer type T.  These
+   macros have undefined behavior if T is signed and has padding bits.
+   If this is a problem for you, please let us know how to fix it for
+   your host.  */
+#define TYPE_MINIMUM(t) \
+  ((t) (! TYPE_SIGNED (t) \
+	? (t) 0 \
+	: ~ TYPE_MAXIMUM (t)))
+#define TYPE_MAXIMUM(t) \
+  ((t) (! TYPE_SIGNED (t) \
+	? (t) -1 \
+	: ((((t) 1 << (sizeof (t) * CHAR_BIT - 2)) - 1) * 2 + 1)))
+                  
 #ifndef TIME_T_MIN
-#define TIME_T_MIN (0 < (time_t) -1 ? (time_t) 0 \
-		    : ~ (time_t) 0 << (sizeof (time_t) * CHAR_BIT - 1))
+# define TIME_T_MIN TYPE_MINIMUM (time_t)
 #endif
 #ifndef TIME_T_MAX
-#define TIME_T_MAX (~ (time_t) 0 - TIME_T_MIN)
+# define TIME_T_MAX TYPE_MAXIMUM (time_t)
 #endif
 
 #define TM_YEAR_BASE 1900
@@ -104,13 +117,13 @@ const unsigned short int __mon_yday[2][13] =
     { 0, 31, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335, 366 }
   };
 
-static time_t ydhms_tm_diff __P ((int, int, int, int, int, const struct tm *));
-time_t __mktime_internal __P ((struct tm *,
+static time_t ydhms_tm_diff PARAMS ((int, int, int, int, int, const struct tm *));
+time_t __mktime_internal PARAMS ((struct tm *,
 			       struct tm *(*) (const time_t *, struct tm *),
 			       time_t *));
 
 
-static struct tm *my_localtime_r __P ((const time_t *, struct tm *));
+static struct tm *my_localtime_r PARAMS ((const time_t *, struct tm *));
 static struct tm *
 my_localtime_r (t, tp)
      const time_t *t;
@@ -180,7 +193,7 @@ mktime (tp)
 time_t
 __mktime_internal (tp, convert, offset)
      struct tm *tp;
-     struct tm *(*convert) __P ((const time_t *, struct tm *));
+     struct tm *(*convert) PARAMS ((const time_t *, struct tm *));
      time_t *offset;
 {
   time_t t, dt, t0;
@@ -305,7 +318,7 @@ __mktime_internal (tp, convert, offset)
 weak_alias (mktime, timelocal)
 #endif
 
-#if DEBUG
+#if DEBUG_MKTIME
 
 static int
 not_equal_tm (a, b)
@@ -416,7 +429,7 @@ main (argc, argv)
   return status;
 }
 
-#endif /* DEBUG */
+#endif /* DEBUG_MKTIME */
 
 /*
 Local Variables:

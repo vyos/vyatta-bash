@@ -19,7 +19,10 @@ abcd:~chet
 /bin:/usr/bin:.:/usr/xyz/bin
 /bin:/usr/bin:.:~/bin
 /bin:/usr/bin:.:~/bin
+\~
 ok 1
 ok 2
 ok 3
 ~root
+foo=bar:/usr/xyz
+foo=bar:~

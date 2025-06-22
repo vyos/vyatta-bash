@@ -1,7 +1,7 @@
 This file is kill.def, from which is created kill.c.
 It implements the builtin "kill" in Bash.
 
-Copyright (C) 1987-2009 Free Software Foundation, Inc.
+Copyright (C) 1987-2020 Free Software Foundation, Inc.
 
 This file is part of GNU Bash, the Bourne Again SHell.
 
@@ -33,7 +33,8 @@ Options:
   -s sig	SIG is a signal name
   -n sig	SIG is a signal number
   -l	list the signal names; if arguments follow `-l' they are
-	assumed to be signal numbers for which names should be listed
+		assumed to be signal numbers for which names should be listed
+  -L	synonym for -l
 
 Kill is a shell builtin for two reasons: it allows job IDs to be used
 instead of process IDs, and allows processes to be killed if the limit
@@ -57,6 +58,8 @@ $END
 #include "../bashansi.h"
 #include "../bashintl.h"
 
+#include <signal.h>
+
 #include "../shell.h"
 #include "../trap.h"
 #include "../jobs.h"
@@ -67,9 +70,7 @@ $END
 extern int errno;
 #endif /* !errno */
 
-extern int posixly_correct;
-
-static void kill_error __P((pid_t, int));
+static void kill_error PARAMS((pid_t, int));
 
 #if !defined (CONTINUE_AFTER_KILL_ERROR)
 #  define CONTINUE_OR_FAIL return (EXECUTION_FAILURE)
@@ -92,8 +93,9 @@ kill_builtin (list)
   if (list == 0)
     {
       builtin_usage ();
-      return (EXECUTION_FAILURE);
+      return (EX_USAGE);
     }
+  CHECK_HELPOPT (list);
 
   any_succeeded = listing = saw_signal = 0;
   sig = SIGTERM;
@@ -105,7 +107,7 @@ kill_builtin (list)
     {
       word = list->word->word;
 
-      if (ISOPTION (word, 'l'))
+      if (ISOPTION (word, 'l') || ISOPTION (word, 'L'))
 	{
 	  listing++;
 	  list = list->next;
@@ -116,20 +118,29 @@ kill_builtin (list)
 	  if (list)
 	    {
 	      sigspec = list->word->word;
+use_sigspec:
 	      if (sigspec[0] == '0' && sigspec[1] == '\0')
 		sig = 0;
 	      else
 		sig = decode_signal (sigspec, dflags);
 	      list = list->next;
-#if 0
-	      saw_signal++;	/* XXX - for bash-4.2 */
-#endif
+	      saw_signal++;
 	    }
 	  else
 	    {
 	      sh_needarg (word);
 	      return (EXECUTION_FAILURE);
 	    }
+	}
+      else if (word[0] == '-' && word[1] == 's' && ISALPHA (word[2]))
+	{
+	  sigspec = word + 2;
+	  goto use_sigspec;
+	}
+      else if (word[0] == '-' && word[1] == 'n' && ISDIGIT (word[2]))
+	{
+	  sigspec = word + 2;
+	  goto use_sigspec;
 	}
       else if (ISOPTION (word, '-'))
 	{
@@ -139,7 +150,7 @@ kill_builtin (list)
       else if (ISOPTION (word, '?'))
 	{
 	  builtin_usage ();
-	  return (EXECUTION_SUCCESS);
+	  return (EX_USAGE);
 	}
       /* If this is a signal specification then process it.  We only process
 	 the first one seen; other arguments may signify process groups (e.g,
@@ -168,7 +179,7 @@ kill_builtin (list)
   if (list == 0)
     {
       builtin_usage ();
-      return (EXECUTION_FAILURE);
+      return (EX_USAGE);
     }
 
   while (list)

@@ -1,5 +1,0 @@
-#! /bin/sh -e
-
-install-info --quiet --remove bashdb
-
-#DEBHELPER#

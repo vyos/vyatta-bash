@@ -1,6 +1,6 @@
 /* findcmd.c -- Functions to search for commands by name. */
 
-/* Copyright (C) 1997-2009 Free Software Foundation, Inc.
+/* Copyright (C) 1997-2022 Free Software Foundation, Inc.
 
    This file is part of GNU Bash, the Bourne Again SHell.
 
@@ -32,27 +32,33 @@
 #if defined (HAVE_UNISTD_H)
 #  include <unistd.h>
 #endif
+#include <errno.h>
 
 #include "bashansi.h"
 
 #include "memalloc.h"
 #include "shell.h"
+#include "execute_cmd.h"
 #include "flags.h"
 #include "hashlib.h"
 #include "pathexp.h"
 #include "hashcmd.h"
 #include "findcmd.h"	/* matching prototypes and declarations */
 
-extern int posixly_correct;
+#include <glob/strmatch.h>
+
+#if !defined (errno)
+extern int errno;
+#endif
 
 /* Static functions defined and used in this file. */
-static char *_find_user_command_internal __P((const char *, int));
-static char *find_user_command_internal __P((const char *, int));
-static char *find_user_command_in_path __P((const char *, char *, int));
-static char *find_in_path_element __P((const char *, char *, int, int, struct stat *));
-static char *find_absolute_program __P((const char *, int));
+static char *_find_user_command_internal PARAMS((const char *, int));
+static char *find_user_command_internal PARAMS((const char *, int));
+static char *find_user_command_in_path PARAMS((const char *, char *, int, int *));
+static char *find_in_path_element PARAMS((const char *, char *, int, int, struct stat *, int *));
+static char *find_absolute_program PARAMS((const char *, int));
 
-static char *get_next_path_element __P((char *, int *));
+static char *get_next_path_element PARAMS((char *, int *));
 
 /* The file name which we would try to execute, except that it isn't
    possible to execute it.  This is the first file that matches the
@@ -63,7 +69,7 @@ static char *file_to_lose_on;
 
 /* Non-zero if we should stat every command found in the hash table to
    make sure it still exists. */
-int check_hashed_filenames;
+int check_hashed_filenames = CHECKHASH_DEFAULT;
 
 /* DOT_FOUND_IN_SEARCH becomes non-zero when find_user_command ()
    encounters a `.' as the directory pathname while scanning the
@@ -71,9 +77,39 @@ int check_hashed_filenames;
    containing the file of interest. */
 int dot_found_in_search = 0;
 
+/* Set up EXECIGNORE; a blacklist of patterns that executable files should not
+   match. */
+static struct ignorevar execignore =
+{
+  "EXECIGNORE",
+  NULL,
+  0,
+  NULL,
+  NULL
+};
+
+void
+setup_exec_ignore (varname)
+     char *varname;
+{
+  setup_ignore_patterns (&execignore);
+}
+
+static int
+exec_name_should_ignore (name)
+     const char *name;
+{
+  struct ign *p;
+
+  for (p = execignore.ignores; p && p->val; p++)
+    if (strmatch (p->val, (char *)name, FNMATCH_EXTFLAG|FNM_CASEFOLD) != FNM_NOMATCH)
+      return 1;
+  return 0;
+}
+
 /* Return some flags based on information about this file.
    The EXISTS bit is non-zero if the file is found.
-   The EXECABLE bit is non-zero the file is executble.
+   The EXECABLE bit is non-zero the file is executable.
    Zero is returned if the file is not found. */
 int
 file_status (name)
@@ -98,7 +134,7 @@ file_status (name)
      file access mechanisms into account.  eaccess uses the effective
      user and group IDs, not the real ones.  We could use sh_eaccess,
      but we don't want any special treatment for /dev/fd. */
-  if (eaccess (name, X_OK) == 0)
+  if (exec_name_should_ignore (name) == 0 && eaccess (name, X_OK) == 0)
     r |= FS_EXECABLE;
   if (eaccess (name, R_OK) == 0)
     r |= FS_READABLE;
@@ -108,7 +144,7 @@ file_status (name)
   /* We have to use access(2) to determine access because AFS does not
      support Unix file system semantics.  This may produce wrong
      answers for non-AFS files when ruid != euid.  I hate AFS. */
-  if (access (name, X_OK) == 0)
+  if (exec_name_should_ignore (name) == 0 && access (name, X_OK) == 0)
     r |= FS_EXECABLE;
   if (access (name, R_OK) == 0)
     r |= FS_READABLE;
@@ -125,7 +161,7 @@ file_status (name)
   if (current_user.euid == (uid_t)0)
     {
       r |= FS_READABLE;
-      if (finfo.st_mode & S_IXUGO)
+      if (exec_name_should_ignore (name) == 0 && (finfo.st_mode & S_IXUGO))
 	r |= FS_EXECABLE;
       return r;
     }
@@ -133,7 +169,7 @@ file_status (name)
   /* If we are the owner of the file, the owner bits apply. */
   if (current_user.euid == finfo.st_uid)
     {
-      if (finfo.st_mode & S_IXUSR)
+      if (exec_name_should_ignore (name) == 0 && (finfo.st_mode & S_IXUSR))
 	r |= FS_EXECABLE;
       if (finfo.st_mode & S_IRUSR)
 	r |= FS_READABLE;
@@ -142,7 +178,7 @@ file_status (name)
   /* If we are in the owning group, the group permissions apply. */
   else if (group_member (finfo.st_gid))
     {
-      if (finfo.st_mode & S_IXGRP)
+      if (exec_name_should_ignore (name) == 0 && (finfo.st_mode & S_IXGRP))
 	r |= FS_EXECABLE;
       if (finfo.st_mode & S_IRGRP)
 	r |= FS_READABLE;
@@ -151,7 +187,7 @@ file_status (name)
   /* Else we check whether `others' have permission to execute the file */
   else
     {
-      if (finfo.st_mode & S_IXOTH)
+      if (exec_name_should_ignore (name) == 0 && finfo.st_mode & S_IXOTH)
 	r |= FS_EXECABLE;
       if (finfo.st_mode & S_IROTH)
 	r |= FS_READABLE;
@@ -172,6 +208,10 @@ executable_file (file)
   int s;
 
   s = file_status (file);
+#if defined (EISDIR)
+  if (s & FS_DIRECTORY)
+    errno = EISDIR;	/* let's see if we can improve error messages */
+#endif
   return ((s & FS_EXECABLE) && ((s & FS_DIRECTORY) == 0));
 }
 
@@ -226,7 +266,7 @@ _find_user_command_internal (name, flags)
 
   /* Search for the value of PATH in both the temporary environments and
      in the regular list of variables. */
-  if (var = find_variable_internal ("PATH", 1))	/* XXX could be array? */
+  if (var = find_variable_tempenv ("PATH"))	/* XXX could be array? */
     path_list = value_cell (var);
   else
     path_list = (char *)NULL;
@@ -234,7 +274,7 @@ _find_user_command_internal (name, flags)
   if (path_list == 0 || *path_list == '\0')
     return (savestring (name));
 
-  cmd = find_user_command_in_path (name, path_list, flags);
+  cmd = find_user_command_in_path (name, path_list, flags, (int *)0);
 
   return (cmd);
 }
@@ -287,12 +327,17 @@ get_next_path_element (path_list, path_index_pointer)
 
 /* Look for PATHNAME in $PATH.  Returns either the hashed command
    corresponding to PATHNAME or the first instance of PATHNAME found
-   in $PATH.  Returns a newly-allocated string. */
+   in $PATH.  If (FLAGS&CMDSRCH_HASH) is non-zero, insert the instance of
+   PATHNAME found in $PATH into the command hash table.
+   If (FLAGS&CMDSRCH_STDPATH) is non-zero, we are running in a `command -p'
+   environment and should use the Posix standard path.
+   Returns a newly-allocated string. */
 char *
-search_for_command (pathname)
+search_for_command (pathname, flags)
      const char *pathname;
+     int flags;
 {
-  char *hashed_file, *command;
+  char *hashed_file, *command, *path_list;
   int temp_path, st;
   SHELL_VAR *path;
 
@@ -300,15 +345,13 @@ search_for_command (pathname)
 
   /* If PATH is in the temporary environment for this command, don't use the
      hash table to search for the full pathname. */
-  path = find_variable_internal ("PATH", 1);
+  path = find_variable_tempenv ("PATH");
   temp_path = path && tempvar_p (path);
-  if (temp_path == 0 && path)
-    path = (SHELL_VAR *)NULL;
 
   /* Don't waste time trying to find hashed data for a pathname
      that is already completely specified or if we're using a command-
      specific value for PATH. */
-  if (path == 0 && absolute_program (pathname) == 0)
+  if (temp_path == 0 && (flags & CMDSRCH_STDPATH) == 0 && absolute_program (pathname) == 0)
     hashed_file = phash_search (pathname);
 
   /* If a command found in the hash table no longer exists, we need to
@@ -334,18 +377,40 @@ search_for_command (pathname)
     command = savestring (pathname);
   else
     {
-      /* If $PATH is in the temporary environment, we've already retrieved
-	 it, so don't bother trying again. */
-      if (temp_path)
-	{
-	  command = find_user_command_in_path (pathname, value_cell (path),
-					       FS_EXEC_PREFERRED|FS_NODIRS);
-	}
+      if (flags & CMDSRCH_STDPATH)
+	path_list = conf_standard_path ();
+      else if (temp_path || path)
+	path_list = value_cell (path);
       else
-	command = find_user_command (pathname);
-      if (command && hashing_enabled && temp_path == 0)
-	phash_insert ((char *)pathname, command, dot_found_in_search, 1);	/* XXX fix const later */
+	path_list = 0;
+
+      command = find_user_command_in_path (pathname, path_list, FS_EXEC_PREFERRED|FS_NODIRS, &st);
+
+      if (command && hashing_enabled && temp_path == 0 && (flags & CMDSRCH_HASH))
+	{
+	  /* If we found the full pathname the same as the command name, the
+	     command probably doesn't exist.  Don't put it into the hash
+	     table unless it's an executable file in the current directory. */
+	  if (STREQ (command, pathname))
+	    {
+	      if (st & FS_EXECABLE)
+	        phash_insert ((char *)pathname, command, dot_found_in_search, 1);
+	    }
+	  /* If we're in posix mode, don't add files without the execute bit
+	     to the hash table. */
+	  else if (posixly_correct || check_hashed_filenames)
+	    {
+	      if (st & FS_EXECABLE)
+	        phash_insert ((char *)pathname, command, dot_found_in_search, 1);
+	    }
+	  else
+	    phash_insert ((char *)pathname, command, dot_found_in_search, 1);
+	}
+
+      if (flags & CMDSRCH_STDPATH)
+	free (path_list);
     }
+
   return (command);
 }
 
@@ -389,7 +454,8 @@ user_command_matches (name, flags, state)
 	  name_len = strlen (name);
 	  file_to_lose_on = (char *)NULL;
 	  dot_found_in_search = 0;
-      	  stat (".", &dotinfo);
+	  if (stat (".", &dotinfo) < 0)
+	    dotinfo.st_dev = dotinfo.st_ino = 0;	/* so same_file won't match */
 	  path_list = get_string_value ("PATH");
       	  path_index = 0;
 	}
@@ -401,8 +467,7 @@ user_command_matches (name, flags, state)
 	  if (path_element == 0)
 	    break;
 
-	  match = find_in_path_element (name, path_element, flags, name_len, &dotinfo);
-
+	  match = find_in_path_element (name, path_element, flags, name_len, &dotinfo, (int *)0);
 	  free (path_element);
 
 	  if (match == 0)
@@ -455,19 +520,22 @@ find_absolute_program (name, flags)
 }
 
 static char *
-find_in_path_element (name, path, flags, name_len, dotinfop)
+find_in_path_element (name, path, flags, name_len, dotinfop, rflagsp)
      const char *name;
      char *path;
      int flags, name_len;
      struct stat *dotinfop;
+     int *rflagsp;
 {
   int status;
   char *full_path, *xpath;
 
-  xpath = (*path == '~') ? bash_tilde_expand (path, 0) : path;
+  xpath = (posixly_correct == 0 && *path == '~') ? bash_tilde_expand (path, 0) : path;
 
   /* Remember the location of "." in the path, in all its forms
      (as long as they begin with a `.', e.g. `./.') */
+  /* We could also do this or something similar for all relative pathnames
+     found while searching PATH. */
   if (dot_found_in_search == 0 && *xpath == '.')
     dot_found_in_search = same_file (".", xpath, dotinfop, (struct stat *)NULL);
 
@@ -477,6 +545,9 @@ find_in_path_element (name, path, flags, name_len, dotinfop)
 
   if (xpath != path)
     free (xpath);
+
+  if (rflagsp)
+    *rflagsp = status;
 
   if ((status & FS_EXISTS) == 0)
     {
@@ -506,7 +577,7 @@ find_in_path_element (name, path, flags, name_len, dotinfop)
   /* The file is not executable, but it does exist.  If we prefer
      an executable, then remember this one if it is the first one
      we have found. */
-  if ((flags & FS_EXEC_PREFERRED) && file_to_lose_on == 0)
+  if ((flags & FS_EXEC_PREFERRED) && file_to_lose_on == 0 && exec_name_should_ignore (full_path) == 0)
     file_to_lose_on = savestring (full_path);
 
   /* If we want only executable files, or we don't want directories and
@@ -536,18 +607,21 @@ find_in_path_element (name, path, flags, name_len, dotinfop)
       FS_NODIRS:		Don't find any directories.
 */
 static char *
-find_user_command_in_path (name, path_list, flags)
+find_user_command_in_path (name, path_list, flags, rflagsp)
      const char *name;
      char *path_list;
-     int flags;
+     int flags, *rflagsp;
 {
   char *full_path, *path;
-  int path_index, name_len;
+  int path_index, name_len, rflags;
   struct stat dotinfo;
 
   /* We haven't started looking, so we certainly haven't seen
      a `.' as the directory path yet. */
   dot_found_in_search = 0;
+
+  if (rflagsp)
+    *rflagsp = 0;
 
   if (absolute_program (name))
     {
@@ -560,7 +634,8 @@ find_user_command_in_path (name, path_list, flags)
 
   file_to_lose_on = (char *)NULL;
   name_len = strlen (name);
-  stat (".", &dotinfo);
+  if (stat (".", &dotinfo) < 0)
+    dotinfo.st_dev = dotinfo.st_ino = 0;
   path_index = 0;
 
   while (path_list[path_index])
@@ -574,12 +649,12 @@ find_user_command_in_path (name, path_list, flags)
 
       /* Side effects: sets dot_found_in_search, possibly sets
 	 file_to_lose_on. */
-      full_path = find_in_path_element (name, path, flags, name_len, &dotinfo);
+      full_path = find_in_path_element (name, path, flags, name_len, &dotinfo, &rflags);
       free (path);
 
-      /* This should really be in find_in_path_element, but there isn't the
-	 right combination of flags. */
-      if (full_path && is_directory (full_path))
+      /* We use the file status flag bits to check whether full_path is a
+	 directory, which we reject here. */
+      if (full_path && (rflags & FS_DIRECTORY))
 	{
 	  free (full_path);
 	  continue;
@@ -587,6 +662,8 @@ find_user_command_in_path (name, path_list, flags)
 
       if (full_path)
 	{
+	  if (rflagsp)
+	    *rflagsp = rflags;
 	  FREE (file_to_lose_on);
 	  return (full_path);
 	}
@@ -598,11 +675,22 @@ find_user_command_in_path (name, path_list, flags)
      search would accept a non-executable as a last resort.  If the
      caller specified FS_NODIRS, and file_to_lose_on is a directory,
      return NULL. */
-  if (file_to_lose_on && (flags & FS_NODIRS) && is_directory (file_to_lose_on))
+  if (file_to_lose_on && (flags & FS_NODIRS) && file_isdir (file_to_lose_on))
     {
       free (file_to_lose_on);
       file_to_lose_on = (char *)NULL;
     }
 
   return (file_to_lose_on);
+}
+
+/* External interface to find a command given a $PATH.  Separate from
+   find_user_command_in_path to allow future customization. */
+char *
+find_in_path (name, path_list, flags)
+     const char *name;
+     char *path_list;
+     int flags;
+{
+  return (find_user_command_in_path (name, path_list, flags, (int *)0));
 }

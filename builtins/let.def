@@ -61,7 +61,7 @@ parentheses are evaluated first and may override the precedence
 rules above.
 
 Exit Status:
-If the last ARG evaluates to 0, let returns 1; let returns 0 otherwise..
+If the last ARG evaluates to 0, let returns 1; let returns 0 otherwise.
 $END
 
 #include <config.h>
@@ -86,6 +86,8 @@ let_builtin (list)
   intmax_t ret;
   int expok;
 
+  CHECK_HELPOPT (list);
+
   /* Skip over leading `--' argument. */
   if (list && list->word && ISOPTION (list->word->word, '-'))
     list = list->next;
@@ -98,7 +100,7 @@ let_builtin (list)
 
   for (; list; list = list->next)
     {
-      ret = evalexp (list->word->word, &expok);
+      ret = evalexp (list->word->word, EXP_EXPANDED, &expok);
       if (expok == 0)
 	return (EXECUTION_FAILURE);
     }
@@ -122,7 +124,7 @@ exp_builtin (list)
     }
 
   exp = string_list (list);
-  ret = evalexp (exp, &expok);
+  ret = evalexp (exp, EXP_EXPANDED, &expok);
   (void)free (exp);
   return (((ret == 0) || (expok == 0)) ? EXECUTION_FAILURE : EXECUTION_SUCCESS);
 }

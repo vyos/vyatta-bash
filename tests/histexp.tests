@@ -1,11 +1,24 @@
+#   This program is free software: you can redistribute it and/or modify
+#   it under the terms of the GNU General Public License as published by
+#   the Free Software Foundation, either version 3 of the License, or
+#   (at your option) any later version.
+#
+#   This program is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty of
+#   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#   GNU General Public License for more details.
+#
+#   You should have received a copy of the GNU General Public License
+#   along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
 LC_ALL=C
 LANG=C
-trap 'rm /tmp/newhistory' 0
+trap 'rm $TMPDIR/newhistory' 0
 
 file=bax
 histchars='!^#'	# make sure history comment char is set correctly
 
-unset HISTFILESIZE
+unset HISTFILESIZE HISTTIMEFORMAT
 
 history -c
 
@@ -25,7 +38,7 @@ history -p '!!:z'
 
 history
 
-HISTFILE=/tmp/newhistory
+HISTFILE=$TMPDIR/newhistory
 history -a
 
 history -w
@@ -120,5 +133,26 @@ var2=var1
 echo ${!var2}
 
 # Bash-2.01[.1] fails this test -- it attempts history expansion after the
-# history_expansion_char
+# history_comment_char
 echo ok 3 # !1200
+
+# bash versions through bash-4.3 fail this; they make the digit preceding the
+# > into a separate word, changing the meaning of the redirection
+shopt a b c d 2>/dev/null
+echo !shopt-1
+
+echo !shopt*
+
+# make sure a :p modifier anywhere on the line affects all history expansions
+echo one two three four
+echo !:2:p ; echo !$  
+echo one two three four
+echo !$ ; echo !:2:p
+
+${THIS_SH} ./histexp1.sub
+${THIS_SH} ./histexp2.sub
+${THIS_SH} ./histexp3.sub
+${THIS_SH} ./histexp4.sub
+${THIS_SH} ./histexp5.sub
+${THIS_SH} ./histexp6.sub
+${THIS_SH} ./histexp7.sub

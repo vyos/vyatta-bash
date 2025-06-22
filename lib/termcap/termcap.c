@@ -52,13 +52,16 @@ extern char *realloc ();
 
 #else /* not HAVE_CONFIG_H */
 
-#ifdef STDC_HEADERS
+#ifdef HAVE_STDLIB_H
 #include <stdlib.h>
-#include <string.h>
 #else
 char *getenv ();
 char *malloc ();
 char *realloc ();
+#endif
+
+#ifdef HAVE_STRING_H
+#include <string.h>
 #endif
 
 /* Do this after the include, in case string.h prototypes bcopy.  */
@@ -309,7 +312,7 @@ static int speeds[] =
   };
 
 __private_extern__
-void
+int
 tputs (str, nlines, outfun)
      register char *str;
      int nlines;
@@ -335,7 +338,7 @@ tputs (str, nlines, outfun)
 #endif
 
   if (!str)
-    return;
+    return -1;
 
   while (*str >= '0' && *str <= '9')
     {
@@ -372,6 +375,8 @@ tputs (str, nlines, outfun)
 
   while (padcount-- > 0)
     (*outfun) (PC);
+
+  return 0;
 }
 
 /* Finding the termcap entry in the termcap data base.  */

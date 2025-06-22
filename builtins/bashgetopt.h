@@ -1,6 +1,6 @@
 /* bashgetopt.h -- extern declarations for stuff defined in bashgetopt.c. */
 
-/* Copyright (C) 1993 Free Software Foundation, Inc.
+/* Copyright (C) 1993-2021 Free Software Foundation, Inc.
 
    This file is part of GNU Bash, the Bourne Again SHell.
 
@@ -25,7 +25,11 @@
 
 #include <stdc.h>
 
+#define GETOPT_EOF	-1
+#define GETOPT_HELP	-99
+
 extern char *list_optarg;
+extern int list_optflags;
 
 extern int list_optopt;
 extern int list_opttype;
@@ -33,7 +37,7 @@ extern int list_opttype;
 extern WORD_LIST *lcurrent;
 extern WORD_LIST *loptend;
 
-extern int internal_getopt __P((WORD_LIST *, char *));
-extern void reset_internal_getopt __P((void));
+extern int internal_getopt PARAMS((WORD_LIST *, char *));
+extern void reset_internal_getopt PARAMS((void));
 
 #endif /* !__BASH_GETOPT_H */

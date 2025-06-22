@@ -1,3 +1,16 @@
+#   This program is free software: you can redistribute it and/or modify
+#   it under the terms of the GNU General Public License as published by
+#   the Free Software Foundation, either version 3 of the License, or
+#   (at your option) any later version.
+#
+#   This program is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty of
+#   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#   GNU General Public License for more details.
+#
+#   You should have received a copy of the GNU General Public License
+#   along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
 # TEST - basic declaration and assignment
 typeset -A fluff
 declare -A
@@ -18,7 +31,7 @@ declare -p fluff
 
 unset fluff
 
-# TEST - compount assignment and variable attributes
+# TEST - compound assignment and variable attributes
 declare -A wheat chaff
 wheat=( [zero]=0 [one]=a [two]=b [three]=c )
 
@@ -34,7 +47,8 @@ declare +i chaff
 chaff[hello world]=flip
 declare -p chaff
 
-# TEST - errors
+# TEST - no longer errors
+waste[stuff]=other
 unset waste
 chaff[*]=12
 chaff=( [one]=a [*]=12 )
@@ -106,7 +120,7 @@ unset flix wheat
 
 # TEST - index expansion: no word splitting or globbing
 typeset -A wheat
-cd /tmp
+cd ${TMPDIR:=/tmp}
 touch '[sfiri]'
 wheat=([s*]=6 [foo bar]=flix )
 
@@ -173,6 +187,13 @@ T='([a]=1)'
 echo "${T[@]}"
 unset T
 
+# peculiar ksh93 semantics for unsubscripted assoc variable reference
+declare -A T
+T[0]='zero'
+if [ "$T" != "${T[0]}" ]; then
+	echo 'assoc.tests: $T and ${T[0]} mismatch'
+fi
+
 ${THIS_SH} ./assoc1.sub
 
 ${THIS_SH} ./assoc2.sub
@@ -184,3 +205,64 @@ ${THIS_SH} ./assoc4.sub
 ${THIS_SH} ./assoc5.sub
 
 ${THIS_SH} ./assoc6.sub
+
+${THIS_SH} ./assoc7.sub
+
+# test converting between scalars and assoc arrays
+unset assoc
+assoc=assoc
+declare -A assoc
+declare -p assoc
+echo ${assoc[@]}
+
+# weird syntax required to append to multiple existing array elements using
+# compound assignment syntax
+unset assoc
+declare -A assoc 
+assoc=( [one]=one [two]=two [three]=three )
+assoc+=( [one]+=more [two]+=less )
+declare -p assoc
+
+readonly -A assoc
+declare -p assoc
+
+declare -A hash
+
+hash=(["key"]="value1")
+declare -p hash
+hash=(["key"]="${hash["key"]} value2")
+declare -p hash
+
+unset hash
+
+${THIS_SH} ./assoc8.sub
+
+# new shopt option to prevent multiple expansion of assoc array subscripts
+${THIS_SH} ./assoc9.sub
+
+${THIS_SH} ./assoc10.sub
+
+# test assigning associative arrays using compound key/value pair assignments
+${THIS_SH} ./assoc11.sub
+
+# more kvpair associative array assignment tests
+${THIS_SH} ./assoc12.sub
+
+# assignment to @ and *
+${THIS_SH} ./assoc13.sub
+
+# tests of the @k transformation on associative arrays
+${THIS_SH} ./assoc14.sub
+
+# tests with subscripts and values containing 0x01 (some indexed array tests too)
+${THIS_SH} ./assoc15.sub
+
+# tests with subscripts being expanded more than one in ${xxx} word expansions
+${THIS_SH} ./assoc16.sub
+
+# tests with `[' and `]' subscripts and `unset'
+${THIS_SH} ./assoc17.sub
+
+# tests with `[' and `]' subscripts and printf/read/wait builtins
+${THIS_SH} ./assoc18.sub
+

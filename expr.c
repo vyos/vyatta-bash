@@ -1,6 +1,6 @@
 /* expr.c -- arithmetic expression evaluation. */
 
-/* Copyright (C) 1990-2009 Free Software Foundation, Inc.
+/* Copyright (C) 1990-2021 Free Software Foundation, Inc.
 
    This file is part of GNU Bash, the Bourne Again SHell.
 
@@ -26,8 +26,8 @@
  order of decreasing precedence.
 
 	"id++", "id--"		[post-increment and post-decrement]
-	"++id", "--id"		[pre-increment and pre-decrement]
 	"-", "+"		[(unary operators)]
+	"++id", "--id"		[pre-increment and pre-decrement]
 	"!", "~"
 	"**"			[(exponentiation)]
 	"*", "/", "%"
@@ -63,7 +63,7 @@
  Implementation is a recursive-descent parser.
 
  Chet Ramey
- chet@ins.CWRU.Edu
+ chet@po.cwru.edu
 */
 
 #include "config.h"
@@ -82,12 +82,17 @@
 #include "bashintl.h"
 
 #include "shell.h"
+#include "arrayfunc.h"
+#include "execute_cmd.h"
+#include "flags.h"
+#include "subst.h"
+#include "typemax.h"		/* INTMAX_MAX, INTMAX_MIN */
 
 /* Because of the $((...)) construct, expressions may include newlines.
    Here is a macro which accepts newlines, tabs and spaces as whitespace. */
 #define cr_whitespace(c) (whitespace(c) || ((c) == '\n'))
 
-/* Size be which the expression stack grows when neccessary. */
+/* Size be which the expression stack grows when necessary. */
 #define EXPR_STACK_GROW_SIZE 10
 
 /* Maximum amount of recursion allowed.  This prevents a non-integer
@@ -134,8 +139,30 @@
 #define COMMA	','
 
 /* This should be the function corresponding to the operator with the
-   highest precedence. */
-#define EXP_HIGHEST	expcomma
+   lowest precedence. */
+#define EXP_LOWEST	expcomma
+
+#ifndef MAX_INT_LEN
+#  define MAX_INT_LEN 32
+#endif
+
+struct lvalue
+{
+  char *tokstr;		/* possibly-rewritten lvalue if not NULL */
+  intmax_t tokval;	/* expression evaluated value */
+  SHELL_VAR *tokvar;	/* variable described by array or var reference */
+  intmax_t ind;		/* array index if not -1 */
+};
+
+/* A structure defining a single expression context. */
+typedef struct {
+  int curtok, lasttok;
+  char *expression, *tp, *lasttp;
+  intmax_t tokval;
+  char *tokstr;
+  int noeval;
+  struct lvalue lval;
+} EXPR_CONTEXT;
 
 static char	*expression;	/* The current expression */
 static char	*tp;		/* token lexical position */
@@ -148,61 +175,54 @@ static intmax_t	tokval;		/* current token value */
 static int	noeval;		/* set to 1 if no assignment to be done */
 static procenv_t evalbuf;
 
-static int	_is_arithop __P((int));
-static void	readtok __P((void));	/* lexical analyzer */
+/* set to 1 if the expression has already been run through word expansion */
+static int	already_expanded;
 
-static intmax_t	expr_streval __P((char *, int));
-static intmax_t	strlong __P((char *));
-static void	evalerror __P((const char *));
+static struct lvalue curlval = {0, 0, 0, -1};
+static struct lvalue lastlval = {0, 0, 0, -1};
 
-static void	pushexp __P((void));
-static void	popexp __P((void));
-static void	expr_unwind __P((void));
-static void	expr_bind_variable __P((char *, char *));
+static int	_is_arithop PARAMS((int));
+static void	readtok PARAMS((void));	/* lexical analyzer */
 
-static intmax_t subexpr __P((char *));
+static void	init_lvalue PARAMS((struct lvalue *));
+static struct lvalue *alloc_lvalue PARAMS((void));
+static void	free_lvalue PARAMS((struct lvalue *));
 
-static intmax_t	expcomma __P((void));
-static intmax_t expassign __P((void));
-static intmax_t	expcond __P((void));
-static intmax_t explor __P((void));
-static intmax_t expland __P((void));
-static intmax_t	expbor __P((void));
-static intmax_t	expbxor __P((void));
-static intmax_t	expband __P((void));
-static intmax_t exp5 __P((void));
-static intmax_t exp4 __P((void));
-static intmax_t expshift __P((void));
-static intmax_t exp3 __P((void));
-static intmax_t exp2 __P((void));
-static intmax_t	exppower __P((void));
-static intmax_t exp1 __P((void));
-static intmax_t exp0 __P((void));
+static intmax_t	expr_streval PARAMS((char *, int, struct lvalue *));
+static intmax_t	strlong PARAMS((char *));
+static void	evalerror PARAMS((const char *));
 
-/* A structure defining a single expression context. */
-typedef struct {
-  int curtok, lasttok;
-  char *expression, *tp, *lasttp;
-  intmax_t tokval;
-  char *tokstr;
-  int noeval;
-} EXPR_CONTEXT;
-
-#ifdef INCLUDE_UNUSED
-/* Not used yet. */
-typedef struct {
-  char *tokstr;
-  intmax_t tokval;
-} LVALUE;
+static void	pushexp PARAMS((void));
+static void	popexp PARAMS((void));
+static void	expr_unwind PARAMS((void));
+static void	expr_bind_variable PARAMS((char *, char *));
+#if defined (ARRAY_VARS)
+static void	expr_bind_array_element PARAMS((char *, arrayind_t, char *));
 #endif
+
+static intmax_t subexpr PARAMS((char *));
+
+static intmax_t	expcomma PARAMS((void));
+static intmax_t expassign PARAMS((void));
+static intmax_t	expcond PARAMS((void));
+static intmax_t explor PARAMS((void));
+static intmax_t expland PARAMS((void));
+static intmax_t	expbor PARAMS((void));
+static intmax_t	expbxor PARAMS((void));
+static intmax_t	expband PARAMS((void));
+static intmax_t exp5 PARAMS((void));
+static intmax_t exp4 PARAMS((void));
+static intmax_t expshift PARAMS((void));
+static intmax_t exp3 PARAMS((void));
+static intmax_t expmuldiv PARAMS((void));
+static intmax_t	exppower PARAMS((void));
+static intmax_t exp1 PARAMS((void));
+static intmax_t exp0 PARAMS((void));
 
 /* Global var which contains the stack of expression contexts. */
 static EXPR_CONTEXT **expr_stack;
 static int expr_depth;		   /* Location in the stack. */
 static int expr_stack_size;	   /* Number of slots already allocated. */
-
-extern char *this_command_name;
-extern int unbound_vars_is_error, last_command_exit_value;
 
 #if defined (ARRAY_VARS)
 extern const char * const bash_badsub_errmsg;
@@ -217,6 +237,7 @@ extern const char * const bash_badsub_errmsg;
     (X)->tokval = tokval; \
     (X)->tokstr = tokstr; \
     (X)->noeval = noeval; \
+    (X)->lval = curlval; \
   } while (0)
 
 #define RESTORETOK(X) \
@@ -228,6 +249,7 @@ extern const char * const bash_badsub_errmsg;
     tokval = (X)->tokval; \
     tokstr = (X)->tokstr; \
     noeval = (X)->noeval; \
+    curlval = (X)->lval; \
   } while (0)
 
 /* Push and save away the contents of the globals describing the
@@ -261,8 +283,13 @@ popexp ()
 {
   EXPR_CONTEXT *context;
 
-  if (expr_depth == 0)
-    evalerror (_("recursion stack underflow"));
+  if (expr_depth <= 0)
+    {
+      /* See the comment at the top of evalexp() for an explanation of why
+	 this is done. */
+      expression = lasttp = 0;
+      evalerror (_("recursion stack underflow"));
+    }
 
   context = expr_stack[--expr_depth];
 
@@ -285,7 +312,8 @@ expr_unwind ()
 
       free (expr_stack[expr_depth]);
     }
-  free (expr_stack[expr_depth]);	/* free the allocated EXPR_CONTEXT */
+  if (expr_depth == 0)
+    free (expr_stack[expr_depth]);	/* free the allocated EXPR_CONTEXT */
 
   noeval = 0;	/* XXX */
 }
@@ -294,9 +322,72 @@ static void
 expr_bind_variable (lhs, rhs)
      char *lhs, *rhs;
 {
-  (void)bind_int_variable (lhs, rhs);
+  SHELL_VAR *v;
+  int aflags;
+
+  if (lhs == 0 || *lhs == 0)
+    return;		/* XXX */
+
+#if defined (ARRAY_VARS)
+  aflags = (assoc_expand_once && already_expanded) ? ASS_NOEXPAND : 0;
+  aflags |= ASS_ALLOWALLSUB;		/* allow assoc[@]=value */
+#else
+  aflags = 0;
+#endif
+  v = bind_int_variable (lhs, rhs, aflags);
+  if (v && (readonly_p (v) || noassign_p (v)))
+    sh_longjmp (evalbuf, 1);	/* variable assignment error */
   stupidly_hack_special_variables (lhs);
 }
+
+#if defined (ARRAY_VARS)
+/* This is similar to the logic in arrayfunc.c:valid_array_reference when
+   you pass VA_NOEXPAND. */
+static int
+expr_skipsubscript (vp, cp)
+     char *vp, *cp;
+{
+  int flags, isassoc;
+  SHELL_VAR *entry;
+
+  isassoc = 0;
+  entry = 0;
+  if (assoc_expand_once & already_expanded)
+    {
+      *cp = '\0';
+      isassoc = legal_identifier (vp) && (entry = find_variable (vp)) && assoc_p (entry);
+      *cp = '[';	/* ] */
+    }
+  flags = (isassoc && assoc_expand_once && already_expanded) ? VA_NOEXPAND : 0;
+  return (skipsubscript (cp, 0, flags));
+}
+
+/* Rewrite tok, which is of the form vname[expression], to vname[ind], where
+   IND is the already-calculated value of expression. */
+static void
+expr_bind_array_element (tok, ind, rhs)
+     char *tok;
+     arrayind_t ind;
+     char *rhs;
+{
+  char *lhs, *vname;
+  size_t llen;
+  char ibuf[INT_STRLEN_BOUND (arrayind_t) + 1], *istr;
+
+  istr = fmtumax (ind, 10, ibuf, sizeof (ibuf), 0);
+  vname = array_variable_name (tok, 0, (char **)NULL, (int *)NULL);
+
+  llen = strlen (vname) + sizeof (ibuf) + 3;
+  lhs = xmalloc (llen);
+
+  sprintf (lhs, "%s[%s]", vname, istr);		/* XXX */
+  
+/*itrace("expr_bind_array_element: %s=%s", lhs, rhs);*/
+  expr_bind_variable (lhs, rhs);
+  free (vname);
+  free (lhs);
+}
+#endif /* ARRAY_VARS */
 
 /* Evaluate EXPR, and return the arithmetic result.  If VALIDP is
    non-null, a zero is stored into the location to which it points
@@ -312,8 +403,9 @@ expr_bind_variable (lhs, rhs)
    safe to let the loop terminate when expr_depth == 0, without freeing up
    any of the expr_depth[0] stuff. */
 intmax_t
-evalexp (expr, validp)
+evalexp (expr, flags, validp)
      char *expr;
+     int flags;
      int *validp;
 {
   intmax_t val;
@@ -322,10 +414,11 @@ evalexp (expr, validp)
 
   val = 0;
   noeval = 0;
+  already_expanded = (flags&EXP_EXPANDED);
 
   FASTCOPY (evalbuf, oevalbuf, sizeof (evalbuf));
 
-  c = setjmp (evalbuf);
+  c = setjmp_nosigs (evalbuf);
 
   if (c)
     {
@@ -334,6 +427,10 @@ evalexp (expr, validp)
       tokstr = expression = (char *)NULL;
 
       expr_unwind ();
+      expr_depth = 0;	/* XXX - make sure */
+
+      /* We copy in case we've called evalexp recursively */
+      FASTCOPY (oevalbuf, evalbuf, sizeof (evalbuf));
 
       if (validp)
 	*validp = 0;
@@ -364,17 +461,20 @@ subexpr (expr)
     return (0);
 
   pushexp ();
-  curtok = lasttok = 0;
   expression = savestring (expr);
   tp = expression;
 
+  curtok = lasttok = 0;
   tokstr = (char *)NULL;
   tokval = 0;
+  init_lvalue (&curlval);
+  lastlval = curlval;
 
   readtok ();
 
-  val = EXP_HIGHEST ();
+  val = EXP_LOWEST ();
 
+  /*TAG:bash-5.3 make it clear that these are arithmetic syntax errors */
   if (curtok != 0)
     evalerror (_("syntax error in expression"));
 
@@ -406,6 +506,10 @@ expassign ()
 {
   register intmax_t value;
   char *lhs, *rhs;
+  arrayind_t lind;
+#if defined (HAVE_IMAXDIV)
+  imaxdiv_t idiv;
+#endif
 
   value = expcond ();
   if (curtok == EQ || curtok == OP_ASSIGN)
@@ -424,26 +528,45 @@ expassign ()
 	  lvalue = value;
 	}
 
+      if (tokstr == 0)
+	evalerror (_("syntax error in variable assignment"));
+
+      /* XXX - watch out for pointer aliasing issues here */
       lhs = savestring (tokstr);
+      /* save ind in case rhs is string var and evaluation overwrites it */
+      lind = curlval.ind;
       readtok ();
       value = expassign ();
 
       if (special)
 	{
+	  if ((op == DIV || op == MOD) && value == 0)
+	    {
+	      if (noeval == 0)
+		evalerror (_("division by 0"));
+	      else
+	        value = 1;
+	    }
+
 	  switch (op)
 	    {
 	    case MUL:
+	      /* Handle INTMAX_MIN and INTMAX_MAX * -1 specially here? */
 	      lvalue *= value;
 	      break;
 	    case DIV:
-	      if (value == 0)
-		evalerror (_("division by 0"));
-	      lvalue /= value;
-	      break;
 	    case MOD:
-	      if (value == 0)
-		evalerror (_("division by 0"));
-	      lvalue %= value;
+	      if (lvalue == INTMAX_MIN && value == -1)
+		lvalue = (op == DIV) ? INTMAX_MIN : 0;
+	      else
+#if HAVE_IMAXDIV
+		{
+		  idiv = imaxdiv (lvalue, value);
+		  lvalue = (op == DIV) ? idiv.quot : idiv.rem;
+		}
+#else
+	        lvalue = (op == DIV) ? lvalue / value : lvalue % value;
+#endif
 	      break;
 	    case PLUS:
 	      lvalue += value;
@@ -476,12 +599,23 @@ expassign ()
 
       rhs = itos (value);
       if (noeval == 0)
-	expr_bind_variable (lhs, rhs);
+	{
+#if defined (ARRAY_VARS)
+	  if (lind != -1)
+	    expr_bind_array_element (lhs, lind, rhs);
+	  else
+#endif
+	    expr_bind_variable (lhs, rhs);
+	}
+      if (curlval.tokstr && curlval.tokstr == tokstr)
+	init_lvalue (&curlval);
+
       free (rhs);
       free (lhs);
       FREE (tokstr);
       tokstr = (char *)NULL;		/* For freeing on errors. */
     }
+
   return (value);
 }
 
@@ -496,24 +630,23 @@ expcond ()
   rval = cval = explor ();
   if (curtok == QUES)		/* found conditional expr */
     {
-      readtok ();
-      if (curtok == 0 || curtok == COL)
-	evalerror (_("expression expected"));
       if (cval == 0)
 	{
 	  set_noeval = 1;
 	  noeval++;
 	}
 
-      val1 = EXP_HIGHEST ();
+      readtok ();
+      if (curtok == 0 || curtok == COL)
+	evalerror (_("expression expected"));
+
+      val1 = EXP_LOWEST ();
 
       if (set_noeval)
 	noeval--;
       if (curtok != COL)
 	evalerror (_("`:' expected for conditional expression"));
-      readtok ();
-      if (curtok == 0)
-	evalerror (_("expression expected"));
+
       set_noeval = 0;
       if (cval)
  	{
@@ -521,7 +654,11 @@ expcond ()
 	  noeval++;
  	}
 
+      readtok ();
+      if (curtok == 0)
+	evalerror (_("expression expected"));
       val2 = expcond ();
+
       if (set_noeval)
 	noeval--;
       rval = cval ? val1 : val2;
@@ -599,6 +736,7 @@ expbor ()
       readtok ();
       val2 = expbxor ();
       val1 = val1 | val2;
+      lasttok = NUM;
     }
 
   return (val1);
@@ -617,6 +755,7 @@ expbxor ()
       readtok ();
       val2 = expband ();
       val1 = val1 ^ val2;
+      lasttok = NUM;
     }
 
   return (val1);
@@ -635,6 +774,7 @@ expband ()
       readtok ();
       val2 = exp5 ();
       val1 = val1 & val2;
+      lasttok = NUM;
     }
 
   return (val1);
@@ -657,6 +797,7 @@ exp5 ()
 	val1 = (val1 == val2);
       else if (op == NEQ)
 	val1 = (val1 != val2);
+      lasttok = NUM;
     }
   return (val1);
 }
@@ -685,6 +826,7 @@ exp4 ()
 	val1 = val1 < val2;
       else			/* (op == GT) */
 	val1 = val1 > val2;
+      lasttok = NUM;
     }
   return (val1);
 }
@@ -708,6 +850,7 @@ expshift ()
 	val1 = val1 << val2;
       else
 	val1 = val1 >> val2;
+      lasttok = NUM;
     }
 
   return (val1);
@@ -718,27 +861,31 @@ exp3 ()
 {
   register intmax_t val1, val2;
 
-  val1 = exp2 ();
+  val1 = expmuldiv ();
 
   while ((curtok == PLUS) || (curtok == MINUS))
     {
       int op = curtok;
 
       readtok ();
-      val2 = exp2 ();
+      val2 = expmuldiv ();
 
       if (op == PLUS)
 	val1 += val2;
       else if (op == MINUS)
 	val1 -= val2;
+      lasttok = NUM;
     }
   return (val1);
 }
 
 static intmax_t
-exp2 ()
+expmuldiv ()
 {
   register intmax_t val1, val2;
+#if defined (HAVE_IMAXDIV)
+  imaxdiv_t idiv;
+#endif
 
   val1 = exppower ();
 
@@ -747,22 +894,67 @@ exp2 ()
 	 (curtok == MOD))
     {
       int op = curtok;
+      char *stp, *sltp;
 
+      stp = tp;
       readtok ();
 
       val2 = exppower ();
 
+      /* Handle division by 0 and twos-complement arithmetic overflow */
       if (((op == DIV) || (op == MOD)) && (val2 == 0))
-	evalerror (_("division by 0"));
+	{
+	  if (noeval == 0)
+	    {
+	      sltp = lasttp;
+	      lasttp = stp;
+	      while (lasttp && *lasttp && whitespace (*lasttp))
+		lasttp++;
+	      evalerror (_("division by 0"));
+	      lasttp = sltp;
+	    }
+	  else
+	    val2 = 1;
+	}
+      else if (op == MOD && val1 == INTMAX_MIN && val2 == -1)
+	{
+	  val1 = 0;
+	  continue;
+	}
+      else if (op == DIV && val1 == INTMAX_MIN && val2 == -1)
+	val2 = 1;
 
       if (op == MUL)
 	val1 *= val2;
-      else if (op == DIV)
-	val1 /= val2;
-      else if (op == MOD)
-	val1 %= val2;
+      else if (op == DIV || op == MOD)
+#if defined (HAVE_IMAXDIV)
+	{
+	  idiv = imaxdiv (val1, val2);
+	  val1 = (op == DIV) ? idiv.quot : idiv.rem;
+	}
+#else
+	val1 = (op == DIV) ? val1 / val2 : val1 % val2;
+#endif
+      lasttok = NUM;
     }
   return (val1);
+}
+
+static intmax_t
+ipow (base, exp)
+     intmax_t base, exp;
+{
+  intmax_t result;
+
+  result = 1;
+  while (exp)
+    {
+      if (exp & 1)
+	result *= base;
+      exp >>= 1;
+      base *= base;
+    }
+  return result;
 }
 
 static intmax_t
@@ -775,13 +967,12 @@ exppower ()
     {
       readtok ();
       val2 = exppower ();	/* exponentiation is right-associative */
+      lasttok = NUM;
       if (val2 == 0)
 	return (1);
       if (val2 < 0)
 	evalerror (_("exponent less than 0"));
-      for (c = 1; val2--; c *= val1)
-	;
-      val1 = c;
+      val1 = ipow (val1, val2);
     }
   return (val1);
 }
@@ -795,11 +986,25 @@ exp1 ()
     {
       readtok ();
       val = !exp1 ();
+      lasttok = NUM;
     }
   else if (curtok == BNOT)
     {
       readtok ();
       val = ~exp1 ();
+      lasttok = NUM;
+    }
+  else if (curtok == MINUS)
+    {
+      readtok ();
+      val = - exp1 ();
+      lasttok = NUM;
+    }
+  else if (curtok == PLUS)
+    {
+      readtok ();
+      val = exp1 ();
+      lasttok = NUM;
     }
   else
     val = exp0 ();
@@ -828,27 +1033,26 @@ exp0 ()
       v2 = tokval + ((stok == PREINC) ? 1 : -1);
       vincdec = itos (v2);
       if (noeval == 0)
-	expr_bind_variable (tokstr, vincdec);
+	{
+#if defined (ARRAY_VARS)
+	  if (curlval.ind != -1)
+	    expr_bind_array_element (curlval.tokstr, curlval.ind, vincdec);
+	  else
+#endif
+	    if (tokstr)
+	      expr_bind_variable (tokstr, vincdec);
+	}
       free (vincdec);
       val = v2;
 
       curtok = NUM;	/* make sure --x=7 is flagged as an error */
       readtok ();
     }
-  else if (curtok == MINUS)
-    {
-      readtok ();
-      val = - exp0 ();
-    }
-  else if (curtok == PLUS)
-    {
-      readtok ();
-      val = exp0 ();
-    }
   else if (curtok == LPAR)
     {
+      /* XXX - save curlval here?  Or entire expression context? */
       readtok ();
-      val = EXP_HIGHEST ();
+      val = EXP_LOWEST ();
 
       if (curtok != RPAR) /* ( */
 	evalerror (_("missing `)'"));
@@ -873,22 +1077,30 @@ exp0 ()
  	      /* restore certain portions of EC */
  	      tokstr = ec.tokstr;
  	      noeval = ec.noeval;
+ 	      curlval = ec.lval;
  	      lasttok = STR;	/* ec.curtok */
 
 	      v2 = val + ((stok == POSTINC) ? 1 : -1);
 	      vincdec = itos (v2);
 	      if (noeval == 0)
-		expr_bind_variable (tokstr, vincdec);
+		{
+#if defined (ARRAY_VARS)
+		  if (curlval.ind != -1)
+		    expr_bind_array_element (curlval.tokstr, curlval.ind, vincdec);
+		  else
+#endif
+		    expr_bind_variable (tokstr, vincdec);
+		}
 	      free (vincdec);
 	      curtok = NUM;	/* make sure x++=7 is flagged as an error */
  	    }
  	  else
  	    {
+	      /* XXX - watch out for pointer aliasing issues here */
 	      if (stok == STR)	/* free new tokstr before old one is restored */
 		FREE (tokstr);
 	      RESTORETOK (&ec);
  	    }
-
 	}
 	  
       readtok ();
@@ -899,37 +1111,90 @@ exp0 ()
   return (val);
 }
 
+static void
+init_lvalue (lv)
+     struct lvalue *lv;
+{
+  lv->tokstr = 0;
+  lv->tokvar = 0;
+  lv->tokval = lv->ind = -1;
+}
+
+static struct lvalue *
+alloc_lvalue ()
+{
+  struct lvalue *lv;
+
+  lv = xmalloc (sizeof (struct lvalue));
+  init_lvalue (lv);
+  return (lv);
+}
+
+static void
+free_lvalue (lv)
+     struct lvalue *lv;
+{
+  free (lv);		/* should be inlined */
+}
+
 static intmax_t
-expr_streval (tok, e)
+expr_streval (tok, e, lvalue)
      char *tok;
      int e;
+     struct lvalue *lvalue;
 {
   SHELL_VAR *v;
   char *value;
   intmax_t tval;
+  int initial_depth;
+#if defined (ARRAY_VARS)
+  arrayind_t ind;
+  int tflag, aflag;
+  array_eltstate_t es;
+#endif
+
+/*itrace("expr_streval: %s: noeval = %d expanded=%d", tok, noeval, already_expanded);*/
+  /* If we are suppressing evaluation, just short-circuit here instead of
+     going through the rest of the evaluator. */
+  if (noeval)
+    return (0);
+
+  initial_depth = expr_depth;
+
+#if defined (ARRAY_VARS)
+  tflag = (assoc_expand_once && already_expanded) ? AV_NOEXPAND : 0;	/* for a start */
+#endif
 
   /* [[[[[ */
 #if defined (ARRAY_VARS)
-  v = (e == ']') ? array_variable_part (tok, (char **)0, (int *)0) : find_variable (tok);
+  aflag = tflag;	/* use a different variable for now */
+  if (shell_compatibility_level > 51)
+    aflag |= AV_ATSTARKEYS;
+  v = (e == ']') ? array_variable_part (tok, tflag, (char **)0, (int *)0) : find_variable (tok);
 #else
   v = find_variable (tok);
 #endif
+  if (v == 0 && e != ']')
+    v = find_variable_last_nameref (tok, 0);  
 
   if ((v == 0 || invisible_p (v)) && unbound_vars_is_error)
     {
 #if defined (ARRAY_VARS)
-      value = (e == ']') ? array_variable_name (tok, (char **)0, (int *)0) : tok;
+      value = (e == ']') ? array_variable_name (tok, tflag, (char **)0, (int *)0) : tok;
 #else
       value = tok;
 #endif
 
-      last_command_exit_value = EXECUTION_FAILURE;
+      set_exit_status (EXECUTION_FAILURE);
       err_unboundvar (value);
 
 #if defined (ARRAY_VARS)
       if (e == ']')
 	FREE (value);	/* array_variable_name returns new memory */
 #endif
+
+      if (no_longjmp_on_fatal_error && interactive_shell)
+	sh_longjmp (evalbuf, 1);
 
       if (interactive_shell)
 	{
@@ -942,17 +1207,41 @@ expr_streval (tok, e)
     }
 
 #if defined (ARRAY_VARS)
-  /* Second argument of 0 to get_array_value means that we don't allow
-     references like array[@].  In this case, get_array_value is just
-     like get_variable_value in that it does not return newly-allocated
-     memory or quote the results. */
-  value = (e == ']') ? get_array_value (tok, 0, (int *)NULL) : get_variable_value (v);
+  init_eltstate (&es);
+  es.ind = -1;
+  /* If the second argument to get_array_value doesn't include AV_ALLOWALL,
+     we don't allow references like array[@].  In this case, get_array_value
+     is just like get_variable_value in that it does not return newly-allocated
+     memory or quote the results.  AFLAG is set above and is either AV_NOEXPAND
+     or 0. */
+  value = (e == ']') ? get_array_value (tok, aflag, &es) : get_variable_value (v);
+  ind = es.ind;
+  flush_eltstate (&es);
 #else
   value = get_variable_value (v);
 #endif
 
+  if (expr_depth < initial_depth)
+    {
+      if (no_longjmp_on_fatal_error && interactive_shell)
+	sh_longjmp (evalbuf, 1);
+      return (0);
+    }
+
   tval = (value && *value) ? subexpr (value) : 0;
 
+  if (lvalue)
+    {
+      lvalue->tokstr = tok;	/* XXX */
+      lvalue->tokval = tval;
+      lvalue->tokvar = v;	/* XXX */
+#if defined (ARRAY_VARS)
+      lvalue->ind = ind;
+#else
+      lvalue->ind = -1;
+#endif
+    }
+	  
   return (tval);
 }
 
@@ -1024,6 +1313,7 @@ readtok ()
   register char *cp, *xp;
   register unsigned char c, c1;
   register int e;
+  struct lvalue lval;
 
   /* Skip leading whitespace. */
   cp = tp;
@@ -1058,7 +1348,7 @@ readtok ()
 #if defined (ARRAY_VARS)
       if (c == '[')
 	{
-	  e = skipsubscript (cp, 0, 0);
+	  e = expr_skipsubscript (tp, cp);		/* XXX - was skipsubscript */
 	  if (cp[e] == ']')
 	    {
 	      cp += e + 1;
@@ -1071,10 +1361,15 @@ readtok ()
 #endif /* ARRAY_VARS */
 
       *cp = '\0';
+      /* XXX - watch out for pointer aliasing issues here */
+      if (curlval.tokstr && curlval.tokstr == tokstr)
+	init_lvalue (&curlval);
+
       FREE (tokstr);
       tokstr = savestring (tp);
       *cp = c;
 
+      /* XXX - make peektok part of saved token state? */
       SAVETOK (&ec);
       tokstr = (char *)NULL;	/* keep it from being freed */
       tp = savecp = cp;
@@ -1090,7 +1385,10 @@ readtok ()
       /* The tests for PREINC and PREDEC aren't strictly correct, but they
 	 preserve old behavior if a construct like --x=9 is given. */
       if (lasttok == PREINC || lasttok == PREDEC || peektok != EQ)
-	tokval = expr_streval (tokstr, e);
+        {
+          lastlval = curlval;
+	  tokval = expr_streval (tokstr, e, &curlval);
+        }
       else
 	tokval = 0;
 
@@ -1151,6 +1449,19 @@ readtok ()
 	c = POWER;
       else if ((c == '-' || c == '+') && c1 == c && curtok == STR)
 	c = (c == '-') ? POSTDEC : POSTINC;
+#if STRICT_ARITH_PARSING
+      else if ((c == '-' || c == '+') && c1 == c && curtok == NUM)
+#else
+      else if ((c == '-' || c == '+') && c1 == c && curtok == NUM && (lasttok == PREINC || lasttok == PREDEC))
+#endif
+	{
+	  /* This catches something like --FOO++ */
+	  /* TAG:bash-5.3 add gettext calls here or make this a separate function */
+	  if (c == '-')
+	    evalerror ("--: assignment requires lvalue");
+	  else
+	    evalerror ("++: assignment requires lvalue");
+	}
       else if ((c == '-' || c == '+') && c1 == c)
 	{
 	  /* Quickly scan forward to see if this is followed by optional
@@ -1161,7 +1472,20 @@ readtok ()
 	  if (legal_variable_starter ((unsigned char)*xp))
 	    c = (c == '-') ? PREDEC : PREINC;
 	  else
+	    /* Could force parsing as preinc or predec and throw an error */
+#if STRICT_ARITH_PARSING
+	    {
+	      /* Posix says unary plus and minus have higher priority than
+		 preinc and predec. */
+	      /* This catches something like --4++ */
+	      if (c == '-')
+		evalerror ("--: assignment requires lvalue");
+	      else
+		evalerror ("++: assignment requires lvalue");
+	    }
+#else
 	    cp--;	/* not preinc or predec, so unget the character */
+#endif
 	}
       else if (c1 == EQ && member (c, "*/%+-&^|"))
 	{
@@ -1197,12 +1521,12 @@ evalerror (msg)
   char *name, *t;
 
   name = this_command_name;
-  for (t = expression; whitespace (*t); t++)
+  for (t = expression; t && whitespace (*t); t++)
     ;
   internal_error (_("%s%s%s: %s (error token is \"%s\")"),
-		   name ? name : "", name ? ": " : "", t,
-		   msg, (lasttp && *lasttp) ? lasttp : "");
-  longjmp (evalbuf, 1);
+		   name ? name : "", name ? ": " : "",
+		   t ? t : "", msg, (lasttp && *lasttp) ? lasttp : "");
+  sh_longjmp (evalbuf, 1);
 }
 
 /* Convert a string to an intmax_t integer, with an arbitrary base.
@@ -1212,9 +1536,11 @@ evalerror (msg)
 
    Base may be >=2 and <=64.  If base is <= 36, the numbers are drawn
    from [0-9][a-zA-Z], and lowercase and uppercase letters may be used
-   interchangably.  If base is > 36 and <= 64, the numbers are drawn
+   interchangeably.  If base is > 36 and <= 64, the numbers are drawn
    from [0-9][a-z][A-Z]_@ (a = 10, z = 35, A = 36, Z = 61, @ = 62, _ = 63 --
    you get the picture). */
+
+#define VALID_NUMCHAR(c)	(ISALNUM(c) || ((c) == '_') || ((c) == '@'))
 
 static intmax_t
 strlong (num)
@@ -1223,7 +1549,7 @@ strlong (num)
   register char *s;
   register unsigned char c;
   int base, foundbase;
-  intmax_t val;
+  intmax_t val, pval;
 
   s = num;
 
@@ -1241,6 +1567,10 @@ strlong (num)
 	{
 	  base = 16;
 	  s++;
+#if STRICT_ARITH_PARSING
+	  if (*s == 0)
+	    evalerror (_("invalid number"));
+#endif	    
 	}
       else
 	base = 8;
@@ -1262,8 +1592,13 @@ strlong (num)
 	  base = val;
 	  val = 0;
 	  foundbase++;
+
+	  /* Make sure a base# is followed by a character that can compose a
+	     valid integer constant. Jeremy Townshend <jeremy.townshend@gmail.com> */
+	  if (VALID_NUMCHAR (*s) == 0)
+	    evalerror (_("invalid integer constant"));
 	}
-      else if (ISALNUM(c) || (c == '_') || (c == '@'))
+      else if (VALID_NUMCHAR (c))
 	{
 	  if (DIGIT(c))
 	    c = TODIGIT(c);
@@ -1279,7 +1614,14 @@ strlong (num)
 	  if (c >= base)
 	    evalerror (_("value too great for base"));
 
+#ifdef CHECK_OVERFLOW
+	  pval = val;
 	  val = (val * base) + c;
+	  if (val < 0 || val < pval)	/* overflow */
+	    return INTMAX_MAX;
+#else
+	  val = (val * base) + c;
+#endif
 	}
       else
 	break;
@@ -1324,7 +1666,7 @@ main (argc, argv)
 
   for (i = 1; i < argc; i++)
     {
-      v = evalexp (argv[i], &expok);
+      v = evalexp (argv[i], 0, &expok);
       if (expok == 0)
 	fprintf (stderr, _("%s: expression error\n"), argv[i]);
       else

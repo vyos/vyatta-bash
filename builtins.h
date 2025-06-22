@@ -1,6 +1,6 @@
 /* builtins.h -- What a builtin looks like, and where to find them. */
 
-/* Copyright (C) 1987-2009 Free Software Foundation, Inc.
+/* Copyright (C) 1987-2021 Free Software Foundation, Inc.
 
    This file is part of GNU Bash, the Bourne Again SHell.
 
@@ -17,6 +17,9 @@
    You should have received a copy of the GNU General Public License
    along with Bash.  If not, see <http://www.gnu.org/licenses/>.
 */
+
+#ifndef BUILTINS_H
+#define BUILTINS_H
 
 #include "config.h"
 
@@ -41,6 +44,8 @@
 #define SPECIAL_BUILTIN 0x08	/* This is a Posix `special' builtin. */
 #define ASSIGNMENT_BUILTIN 0x10	/* This builtin takes assignment statements. */
 #define POSIX_BUILTIN	0x20	/* This builtins is special in the Posix command search order. */
+#define LOCALVAR_BUILTIN   0x40	/* This builtin creates local variables */
+#define ARRAYREF_BUILTIN 0x80	/* This builtin takes array references as arguments */
 
 #define BASE_INDENT	4
 
@@ -50,7 +55,7 @@ struct builtin {
   sh_builtin_func_t *function;	/* The address of the invoked function. */
   int flags;			/* One of the #defines above. */
   char * const *long_doc;	/* NULL terminated array of strings. */
-  const char *short_doc;	/* Short version of documenation. */
+  const char *short_doc;	/* Short version of documentation. */
   char *handle;			/* for future use */
 };
 
@@ -59,3 +64,5 @@ extern int num_shell_builtins;	/* Number of shell builtins. */
 extern struct builtin static_shell_builtins[];
 extern struct builtin *shell_builtins;
 extern struct builtin *current_builtin;
+
+#endif /* BUILTINS_H */

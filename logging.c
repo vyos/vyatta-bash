@@ -29,6 +29,7 @@
 #include <utmp.h>
 #include <mqueue.h>
 
+#include "logging.h"
 #include "logmessage.h"
 
 /*

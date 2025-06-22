@@ -2,7 +2,7 @@
 
 /* Modified to run with the GNU shell Apr 25, 1988 by bfox. */
 
-/* Copyright (C) 1987-2009 Free Software Foundation, Inc.
+/* Copyright (C) 1987-2021 Free Software Foundation, Inc.
 
    This file is part of GNU Bash, the Bourne Again SHell.
 
@@ -32,7 +32,7 @@
 
 #include "bashtypes.h"
 
-#if !defined (HAVE_LIMITS_H)
+#if !defined (HAVE_LIMITS_H) && defined (HAVE_SYS_PARAM_H)
 #  include <sys/param.h>
 #endif
 
@@ -50,6 +50,7 @@ extern int errno;
 #endif /* !_POSIX_VERSION */
 #include "posixstat.h"
 #include "filecntl.h"
+#include "stat-time.h"
 
 #include "bashintl.h"
 
@@ -100,33 +101,33 @@ extern int errno;
 static procenv_t test_exit_buf;
 static int test_error_return;
 #define test_exit(val) \
-	do { test_error_return = val; longjmp (test_exit_buf, 1); } while (0)
+	do { test_error_return = val; sh_longjmp (test_exit_buf, 1); } while (0)
 
-extern int sh_stat __P((const char *, struct stat *));
+extern int sh_stat PARAMS((const char *, struct stat *));
 
 static int pos;		/* The offset of the current argument in ARGV. */
 static int argc;	/* The number of arguments present in ARGV. */
 static char **argv;	/* The argument list. */
 static int noeval;
 
-static void test_syntax_error __P((char *, char *)) __attribute__((__noreturn__));
-static void beyond __P((void)) __attribute__((__noreturn__));
-static void integer_expected_error __P((char *)) __attribute__((__noreturn__));
+static void test_syntax_error PARAMS((char *, char *)) __attribute__((__noreturn__));
+static void beyond PARAMS((void)) __attribute__((__noreturn__));
+static void integer_expected_error PARAMS((char *)) __attribute__((__noreturn__));
 
-static int unary_operator __P((void));
-static int binary_operator __P((void));
-static int two_arguments __P((void));
-static int three_arguments __P((void));
-static int posixtest __P((void));
+static int unary_operator PARAMS((void));
+static int binary_operator PARAMS((void));
+static int two_arguments PARAMS((void));
+static int three_arguments PARAMS((void));
+static int posixtest PARAMS((void));
 
-static int expr __P((void));
-static int term __P((void));
-static int and __P((void));
-static int or __P((void));
+static int expr PARAMS((void));
+static int term PARAMS((void));
+static int and PARAMS((void));
+static int or PARAMS((void));
 
-static int filecomp __P((char *, char *, int));
-static int arithcomp __P((char *, char *, int, int));
-static int patcomp __P((char *, char *, int));
+static int filecomp PARAMS((char *, char *, int));
+static int arithcomp PARAMS((char *, char *, int, int));
+static int patcomp PARAMS((char *, char *, int));
 
 static void
 test_syntax_error (format, arg)
@@ -156,7 +157,7 @@ integer_expected_error (pch)
 }
 
 /* Increment our position in the argument list.  Check that we're not
-   past the end of the argument list.  This check is supressed if the
+   past the end of the argument list.  This check is suppressed if the
    argument is FALSE.  Made a macro for efficiency. */
 #define advance(f) do { ++pos; if (f && pos >= argc) beyond (); } while (0)
 #define unary_advance() do { advance (1); ++pos; } while (0)
@@ -224,6 +225,7 @@ and ()
  *	'-'('G'|'L'|'O'|'S'|'N') filename
  * 	'-t' [int]
  *	'-'('z'|'n') string
+ *	'-'('v'|'R') varname
  *	'-o' option
  *	string
  *	string ('!='|'='|'==') string
@@ -271,14 +273,11 @@ term ()
   if ((pos + 3 <= argc) && test_binop (argv[pos + 1]))
     value = binary_operator ();
 
-  /* Might be a switch type argument */
-  else if (argv[pos][0] == '-' && argv[pos][2] == '\0')
-    {
-      if (test_unop (argv[pos]))
-	value = unary_operator ();
-      else
-	test_syntax_error (_("%s: unary operator expected"), argv[pos]);
-    }
+  /* Might be a switch type argument -- make sure we have enough arguments for
+     the unary operator and argument */
+  else if ((pos + 2) <= argc && test_unop (argv[pos]))
+    value = unary_operator ();
+
   else
     {
       value = argv[pos][0] != '\0';
@@ -289,19 +288,35 @@ term ()
 }
 
 static int
+stat_mtime (fn, st, ts)
+     char *fn;
+     struct stat *st;
+     struct timespec *ts;
+{
+  int r;
+
+  r = sh_stat (fn, st);
+  if (r < 0)
+    return r;
+  *ts = get_stat_mtime (st);
+  return 0;
+}
+
+static int
 filecomp (s, t, op)
      char *s, *t;
      int op;
 {
   struct stat st1, st2;
+  struct timespec ts1, ts2;
   int r1, r2;
 
-  if ((r1 = sh_stat (s, &st1)) < 0)
+  if ((r1 = stat_mtime (s, &st1, &ts1)) < 0)
     {
       if (op == EF)
 	return (FALSE);
     }
-  if ((r2 = sh_stat (t, &st2)) < 0)
+  if ((r2 = stat_mtime (t, &st2, &ts2)) < 0)
     {
       if (op == EF)
 	return (FALSE);
@@ -309,8 +324,8 @@ filecomp (s, t, op)
   
   switch (op)
     {
-    case OT: return (r1 < r2 || (r2 == 0 && st1.st_mtime < st2.st_mtime));
-    case NT: return (r1 > r2 || (r1 == 0 && st1.st_mtime > st2.st_mtime));
+    case OT: return (r1 < r2 || (r2 == 0 && timespec_cmp (ts1, ts2) < 0));
+    case NT: return (r1 > r2 || (r1 == 0 && timespec_cmp (ts1, ts2) > 0));
     case EF: return (same_file (s, t, &st1, &st2));
     }
   return (FALSE);
@@ -324,12 +339,15 @@ arithcomp (s, t, op, flags)
   intmax_t l, r;
   int expok;
 
-  if (flags & TEST_ARITHEXP)
+  if (flags & TEST_ARITHEXP)		/* conditional command */
     {
-      l = evalexp (s, &expok);
+      int eflag;
+
+      eflag = (shell_compatibility_level > 51) ? 0 : EXP_EXPANDED;
+      l = evalexp (s, eflag, &expok);
       if (expok == 0)
 	return (FALSE);		/* should probably longjmp here */
-      r = evalexp (t, &expok);
+      r = evalexp (t, eflag, &expok);
       if (expok == 0)
 	return (FALSE);		/* ditto */
     }
@@ -378,9 +396,11 @@ binary_test (op, arg1, arg2, flags)
     return (patmatch ? patcomp (arg1, arg2, EQ) : STREQ (arg1, arg2));
   else if ((op[0] == '>' || op[0] == '<') && op[1] == '\0')
     {
+#if defined (HAVE_STRCOLL)
       if (shell_compatibility_level > 40 && flags & TEST_LOCALE)
 	return ((op[0] == '>') ? (strcoll (arg1, arg2) > 0) : (strcoll (arg1, arg2) < 0));
       else
+#endif
 	return ((op[0] == '>') ? (strcmp (arg1, arg2) > 0) : (strcmp (arg1, arg2) < 0));
     }
   else if (op[0] == '!' && op[1] == '=' && op[2] == '\0')
@@ -475,13 +495,13 @@ unary_operator ()
 	  if (legal_number (argv[pos], &r))
 	    {
 	      advance (0);
-	      return (unary_test (op, argv[pos - 1]));
+	      return (unary_test (op, argv[pos - 1], 0));
 	    }
 	  else
 	    return (FALSE);
 	}
       else
-	return (unary_test (op, "1"));
+	return (unary_test (op, "1", 0));
     }
 
   /* All of the unary operators take an argument, so we first call
@@ -489,15 +509,19 @@ unary_operator ()
      argument, and then advances pos right past it.  This means that
      pos - 1 is the location of the argument. */
   unary_advance ();
-  return (unary_test (op, argv[pos - 1]));
+  return (unary_test (op, argv[pos - 1], 0));
 }
 
 int
-unary_test (op, arg)
+unary_test (op, arg, flags)
      char *op, *arg;
+     int flags;
 {
   intmax_t r;
   struct stat stat_buf;
+  struct timespec mtime, atime;
+  SHELL_VAR *v;
+  int aflags;
      
   switch (op[1])
     {
@@ -523,8 +547,11 @@ unary_test (op, arg)
 	      (gid_t) current_user.egid == (gid_t) stat_buf.st_gid);
 
     case 'N':
-      return (sh_stat (arg, &stat_buf) == 0 &&
-	      stat_buf.st_atime <= stat_buf.st_mtime);
+      if (sh_stat (arg, &stat_buf) < 0)
+	return (FALSE);
+      atime = get_stat_atime (&stat_buf);
+      mtime = get_stat_mtime (&stat_buf);
+      return (timespec_cmp (mtime, atime) > 0);
 
     case 'f':			/* File is a file? */
       if (sh_stat (arg, &stat_buf) < 0)
@@ -599,6 +626,56 @@ unary_test (op, arg)
 
     case 'o':			/* True if option `arg' is set. */
       return (minus_o_option_value (arg) == 1);
+
+    case 'v':
+#if defined (ARRAY_VARS)
+      aflags = assoc_expand_once ? AV_NOEXPAND : 0;
+      if (valid_array_reference (arg, aflags))
+	{
+	  char *t;
+	  int ret;
+	  array_eltstate_t es;
+
+	  /* Let's assume that this has already been expanded once. */
+	  /* XXX - TAG:bash-5.2 fix with corresponding fix to execute_cmd.c:
+	     execute_cond_node() that passes TEST_ARRAYEXP in FLAGS */
+
+	  if (shell_compatibility_level > 51)
+	    /* Allow associative arrays to use `test -v array[@]' to look for
+	       a key named `@'. */
+	    aflags |= AV_ATSTARKEYS;	/* XXX */
+	  init_eltstate (&es);
+	  t = get_array_value (arg, aflags|AV_ALLOWALL, &es);
+	  ret = t ? TRUE : FALSE;
+	  if (es.subtype > 0)	/* subscript is * or @ */
+	    free (t);
+	  flush_eltstate (&es);
+	  return ret;
+	}
+      else if (legal_number (arg, &r))		/* -v n == is $n set? */
+	return ((r >= 0 && r <= number_of_args()) ? TRUE : FALSE);
+      v = find_variable (arg);
+      if (v && invisible_p (v) == 0 && array_p (v))
+	{
+	  char *t;
+	  /* [[ -v foo ]] == [[ -v foo[0] ]] */
+	  t = array_reference (array_cell (v), 0);
+	  return (t ? TRUE : FALSE);
+	}
+      else if (v && invisible_p (v) == 0 && assoc_p (v))
+	{
+	  char *t;
+	  t = assoc_reference (assoc_cell (v), "0");
+	  return (t ? TRUE : FALSE);
+	}
+#else
+      v = find_variable (arg);
+#endif
+      return (v && invisible_p (v) == 0 && var_isset (v) ? TRUE : FALSE);
+
+    case 'R':
+      v = find_variable_noref (arg);
+      return ((v && invisible_p (v) == 0 && var_isset (v) && nameref_p (v)) ? TRUE : FALSE);
     }
 
   /* We can't actually get here, but this shuts up gcc. */
@@ -620,7 +697,7 @@ test_binop (op)
   else if (op[2] == '\0' && op[1] == '~' && (op[0] == '=' || op[0] == '!'))
     return (1);
 #endif
-  else if (op[0] != '-' || op[2] == '\0' || op[3] != '\0')
+  else if (op[0] != '-' || op[1] == '\0' || op[2] == '\0' || op[3] != '\0')
     return (0);
   else
     {
@@ -664,7 +741,7 @@ int
 test_unop (op)
      char *op;
 {
-  if (op[0] != '-' || op[2] != 0)
+  if (op[0] != '-' || (op[1] && op[2] != 0))
     return (0);
 
   switch (op[1])
@@ -672,8 +749,9 @@ test_unop (op)
     case 'a': case 'b': case 'c': case 'd': case 'e':
     case 'f': case 'g': case 'h': case 'k': case 'n':
     case 'o': case 'p': case 'r': case 's': case 't':
-    case 'u': case 'w': case 'x': case 'z':
+    case 'u': case 'v': case 'w': case 'x': case 'z':
     case 'G': case 'L': case 'O': case 'S': case 'N':
+    case 'R':
       return (1);
     }
 
@@ -685,7 +763,7 @@ two_arguments ()
 {
   if (argv[pos][0] == '!' && argv[pos][1] == '\0')
     return (argv[pos + 1][0] == '\0');
-  else if (argv[pos][0] == '-' && argv[pos][2] == '\0')
+  else if (argv[pos][0] == '-' && argv[pos][1] && argv[pos][2] == '\0')
     {
       if (test_unop (argv[pos]))
 	return (unary_operator ());
@@ -698,7 +776,7 @@ two_arguments ()
   return (0);
 }
 
-#define ANDOR(s)  (s[0] == '-' && !s[2] && (s[1] == 'a' || s[1] == 'o'))
+#define ANDOR(s)  (s[0] == '-' && (s[1] == 'a' || s[1] == 'o') && s[2] == 0)
 
 /* This could be augmented to handle `-t' as equivalent to `-t 1', but
    POSIX requires that `-t' be given an argument. */
@@ -726,6 +804,7 @@ three_arguments ()
     {
       advance (1);
       value = !two_arguments ();
+      pos = argc;
     }
   else if (argv[pos][0] == '(' && argv[pos+2][0] == ')')
     {
@@ -772,6 +851,13 @@ posixtest ()
 	    value = !three_arguments ();
 	    break;
 	  }
+	else if (argv[pos][0] == '(' && argv[pos][1] == '\0' && argv[argc-1][0] == ')' && argv[argc-1][1] == '\0')
+	  {
+	    advance (1);
+	    value = two_arguments ();
+	    pos = argc;
+	    break;
+	  }
 	/* FALLTHROUGH */
       default:
 	value = expr ();
@@ -796,7 +882,7 @@ test_command (margc, margv)
 
   USE_VAR(margc);
 
-  code = setjmp (test_exit_buf);
+  code = setjmp_nosigs (test_exit_buf);
 
   if (code)
     return (test_error_return);
@@ -824,7 +910,12 @@ test_command (margc, margv)
   value = posixtest ();
 
   if (pos != argc)
-    test_syntax_error (_("too many arguments"), (char *)NULL);
+    {
+      if (pos < argc && argv[pos][0] == '-')
+	test_syntax_error (_("syntax error: `%s' unexpected"), argv[pos]);
+      else
+	test_syntax_error (_("too many arguments"), (char *)NULL);
+    }
 
   test_exit (SHELL_BOOLEAN (value));
 }

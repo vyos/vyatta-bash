@@ -7,35 +7,23 @@ of bash.  See the details at the end of the file.
 The bash package was built using the following configuration options:
 
         --with-curses \
-        --disable-net-redirections \
         --enable-largefile \
 
-bash-static additionally configured with --enable-static-link, bash-minimal
-configured with --enable-minimal-config --enable-largefile.
+bash-static additionally configured with --enable-static-link.
+
+The upstream ChangeLog can be found in the bash-doc package.
 
 
 A kind of FAQ for bash on Debian GNU/{Linux,Hurd}
 -------------------------------------------------
 
-0. symlinked directory completion behavior
+1. symlinked directory completion behavior
 
    Starting with readline-4.2a, completion on symlinks that point
    to directories does not append the slash. To restore the behaviour
    found in readline-4.2, add to /etc/inputrc or ~/.inputrc:
 
        set mark-symlinked-directories on
-
-1. How can I make /bin/sh point to something else?
-
-   Type
-
-	dpkg-divert --add /bin/sh
-
-   and then point it to whatever you want. Upgrades to bash  won't upgrade
-   the /bin/sh symlink. To put /bin/sh under dpkg control again, type
-
-	dpkg-divert --remove /bin/sh
-
 
 2. How can I make bash 8-bit clean so I can type hi-bit characters
    directly?
@@ -127,12 +115,6 @@ A kind of FAQ for bash on Debian GNU/{Linux,Hurd}
    If he wants to change something in vi's command mode, he needs
    to use `set keymap vi-command' and enter key bindings without
    the \M- prefix (as he discovered)."
-
-9. Why is bash configured with --disable-net-redirections?
-
-    It can produce completely unexpected results. This kind of
-    feature should not be part of a shell but a special. tool. And
-    that tool has existed for years already, it's called netcat.
 
 
 Patches Applied to the Bash Sources

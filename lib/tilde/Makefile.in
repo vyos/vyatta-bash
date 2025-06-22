@@ -4,7 +4,7 @@
 #								   #
 ####################################################################
 
-# Copyright (C) 1996-2009 Free Software Foundation, Inc.     
+# Copyright (C) 1996-2021 Free Software Foundation, Inc.     
 
 #   This program is free software: you can redistribute it and/or modify
 #   it under the terms of the GNU General Public License as published by
@@ -20,7 +20,7 @@
 #   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 srcdir = @srcdir@
-VPATH = .:@srcdir@
+VPATH = @srcdir@
 topdir = @top_srcdir@
 BUILD_DIR = @BUILD_DIR@
 
@@ -42,6 +42,7 @@ PROFILE_FLAGS = @PROFILE_FLAGS@
 
 CFLAGS = @CFLAGS@
 LOCAL_CFLAGS = @LOCAL_CFLAGS@
+STYLE_CFLAGS = @STYLE_CFLAGS@
 CPPFLAGS = @CPPFLAGS@
 LDFLAGS = @LDFLAGS@ @LOCAL_LDFLAGS@
 
@@ -52,8 +53,8 @@ BASHINCDIR = ${topdir}/include
 
 INCLUDES = -I. -I../.. -I$(topdir) -I${BASHINCDIR} -I$(topdir)/lib
 
-CCFLAGS = $(PROFILE_FLAGS) $(DEFS) $(LOCAL_DEFS) $(CPPFLAGS) \
-	  ${INCLUDES} $(LOCAL_CFLAGS) $(CFLAGS)
+CCFLAGS = ${ASAN_CFLAGS} $(PROFILE_FLAGS) $(DEFS) $(LOCAL_DEFS) $(CPPFLAGS) \
+	  ${INCLUDES} $(STYLE_CFLAGS) $(LOCAL_CFLAGS) $(CFLAGS)
 
 .c.o:
 	$(CC) -c $(CCFLAGS) $<

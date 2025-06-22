@@ -1,7 +1,7 @@
 /* zgetline - read a line of input from a specified file descriptor and return
 	      a pointer to a newly-allocated buffer containing the data. */
 
-/* Copyright (C) 2008,2009 Free Software Foundation, Inc.
+/* Copyright (C) 2008-2020 Free Software Foundation, Inc.
 
    This file is part of GNU Bash, the Bourne Again SHell.
 
@@ -34,13 +34,13 @@
 extern int errno;
 #endif
 
-extern ssize_t zread __P((int, char *, size_t));
-extern ssize_t zreadc __P((int, char *));
-extern ssize_t zreadintr __P((int, char *, size_t));
-extern ssize_t zreadcintr __P((int, char *));
+extern ssize_t zread PARAMS((int, char *, size_t));
+extern ssize_t zreadc PARAMS((int, char *));
+extern ssize_t zreadintr PARAMS((int, char *, size_t));
+extern ssize_t zreadcintr PARAMS((int, char *));
 
-typedef ssize_t breadfunc_t __P((int, char *, size_t));
-typedef ssize_t creadfunc_t __P((int, char *));
+typedef ssize_t breadfunc_t PARAMS((int, char *, size_t));
+typedef ssize_t creadfunc_t PARAMS((int, char *));
 
 /* Initial memory allocation for automatic growing buffer in zreadlinec */
 #define GET_LINE_INITIAL_ALLOCATION 16
@@ -48,9 +48,12 @@ typedef ssize_t creadfunc_t __P((int, char *));
 /* Derived from GNU libc's getline.
    The behavior is almost the same as getline. See man getline.
    The differences are
-   	(1) using file descriptor instead of FILE *,
-	(2) the order of arguments; the file descriptor comes the first, and
-	(3) the addtion of thired argument, UNBUFFERED_READ; this argument
+   	(1) using file descriptor instead of FILE *;
+	(2) the order of arguments: the file descriptor comes first;
+	(3) the addition of a fourth argument, DELIM; sets the delimiter to
+	    be something other than newline if desired.  If setting DELIM,
+	    the next argument should be 1; and
+	(4) the addition of a fifth argument, UNBUFFERED_READ; this argument
 	    controls whether get_line uses buffering or not to get a byte data
 	    from FD. get_line uses zreadc if UNBUFFERED_READ is zero; and
 	    uses zread if UNBUFFERED_READ is non-zero.
@@ -58,13 +61,15 @@ typedef ssize_t creadfunc_t __P((int, char *));
    Returns number of bytes read or -1 on error. */
 
 ssize_t
-zgetline (fd, lineptr, n, unbuffered_read)
+zgetline (fd, lineptr, n, delim, unbuffered_read)
      int fd;
      char **lineptr;
      size_t *n;
+     int delim;
      int unbuffered_read;
 {
-  int nr, retval;
+  int retval;
+  size_t nr;
   char *line, c;
 
   if (lineptr == 0 || n == 0 || (*lineptr == 0 && *n != 0))
@@ -110,7 +115,7 @@ zgetline (fd, lineptr, n, unbuffered_read)
       line[nr] = c;
       nr++;
 
-      if (c == '\n')
+      if (c == delim)
 	{
 	  line[nr] = '\0';
 	  break;

@@ -49,8 +49,8 @@
  *  * Tables are converted but some features are not possible in html.
  *  * The tabbing environment is converted by counting characters and adding
  *    spaces. This might go wrong (outside <PRE>)
- *  * Some pages look beter if man2html works in troff mode, especially pages
- *    with tables. You can deside at compile time which made you want to use.
+ *  * Some pages look better if man2html works in troff mode, especially pages
+ *    with tables. You can decide at compile time which made you want to use.
  *
  *    -DNROFF=0     troff mode
  *    -DNROFF=1     nroff mode   (default)
@@ -68,6 +68,7 @@
 
 #define NROFF 0
 
+#include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -166,6 +167,19 @@ stralloc(int len)
 		exit(EXIT_FAILURE);
 	}
 	return new;
+}
+
+void *
+xmalloc (size_t size)
+{
+	void *ret;
+
+	ret = malloc (size);
+	if (ret == 0) {
+		fprintf(stderr, "man2html: out of memory");
+		exit(EXIT_FAILURE);
+	}
+	return ret;
 }
 
 /*
@@ -508,6 +522,7 @@ read_man_page(char *filename)
 			man_buf[buf_size] = '\n';
 			man_buf[buf_size + 1] = man_buf[buf_size + 2] = '\0';
 		} else {
+			free(man_buf);
 			man_buf = NULL;
 		}
 		fclose(man_stream);
@@ -1251,9 +1266,9 @@ scan_format(char *c, TABLEROW ** result, int *maxcol)
 	if (*result) {
 		clear_table(*result);
 	}
-	layout = currow = (TABLEROW *) malloc(sizeof(TABLEROW));
+	layout = currow = (TABLEROW *) xmalloc(sizeof(TABLEROW));
 	currow->next = currow->prev = NULL;
-	currow->first = curfield = (TABLEITEM *) malloc(sizeof(TABLEITEM));
+	currow->first = curfield = (TABLEITEM *) xmalloc(sizeof(TABLEITEM));
 	*curfield = emptyfield;
 	while (*c && *c != '.') {
 		switch (*c) {
@@ -1272,7 +1287,7 @@ scan_format(char *c, TABLEROW ** result, int *maxcol)
 		case '^':
 		case '_':
 			if (curfield->align) {
-				curfield->next = (TABLEITEM *) malloc(sizeof(TABLEITEM));
+				curfield->next = (TABLEITEM *) xmalloc(sizeof(TABLEITEM));
 				curfield = curfield->next;
 				*curfield = emptyfield;
 			}
@@ -1352,11 +1367,11 @@ scan_format(char *c, TABLEROW ** result, int *maxcol)
 			break;
 		case ',':
 		case '\n':
-			currow->next = (TABLEROW *) malloc(sizeof(TABLEROW));
+			currow->next = (TABLEROW *) xmalloc(sizeof(TABLEROW));
 			currow->next->prev = currow;
 			currow = currow->next;
 			currow->next = NULL;
-			curfield = currow->first = (TABLEITEM *) malloc(sizeof(TABLEITEM));
+			curfield = currow->first = (TABLEITEM *) xmalloc(sizeof(TABLEITEM));
 			*curfield = emptyfield;
 			c++;
 			break;
@@ -1395,20 +1410,20 @@ next_row(TABLEROW * tr)
 	} else {
 		TABLEITEM *ti, *ti2;
 
-		tr->next = (TABLEROW *) malloc(sizeof(TABLEROW));
+		tr->next = (TABLEROW *) xmalloc(sizeof(TABLEROW));
 		tr->next->prev = tr;
 		ti = tr->first;
 		tr = tr->next;
 		tr->next = NULL;
 		if (ti)
-			tr->first = ti2 = (TABLEITEM *) malloc(sizeof(TABLEITEM));
+			tr->first = ti2 = (TABLEITEM *) xmalloc(sizeof(TABLEITEM));
 		else
 			tr->first = ti2 = NULL;
 		while (ti != ti2) {
 			*ti2 = *ti;
 			ti2->contents = NULL;
 			if ((ti = ti->next)) {
-				ti2->next = (TABLEITEM *) malloc(sizeof(TABLEITEM));
+				ti2->next = (TABLEITEM *) xmalloc(sizeof(TABLEITEM));
 			}
 			ti2 = ti2->next;
 		}
@@ -1499,17 +1514,17 @@ scan_table(char *c)
 		if ((*c == '_' || *c == '=') && (c[1] == itemsep || c[1] == '\n')) {
 			if (c[-1] == '\n' && c[1] == '\n') {
 				if (currow->prev) {
-					currow->prev->next = (TABLEROW *) malloc(sizeof(TABLEROW));
+					currow->prev->next = (TABLEROW *) xmalloc(sizeof(TABLEROW));
 					currow->prev->next->next = currow;
 					currow->prev->next->prev = currow->prev;
 					currow->prev = currow->prev->next;
 				} else {
-					currow->prev = layout = (TABLEROW *) malloc(sizeof(TABLEROW));
+					currow->prev = layout = (TABLEROW *) xmalloc(sizeof(TABLEROW));
 					currow->prev->prev = NULL;
 					currow->prev->next = currow;
 				}
 				curfield = currow->prev->first =
-					(TABLEITEM *) malloc(sizeof(TABLEITEM));
+					(TABLEITEM *) xmalloc(sizeof(TABLEITEM));
 				*curfield = emptyfield;
 				curfield->align = *c;
 				curfield->colspan = maxcol;
@@ -1978,7 +1993,7 @@ unescape (char *c)
 	while (i < l && c[i]) {
 		if (c[i] == '\a') {
 			if (c[i+1])
-				strcpy(c + i, c + i + 1);	/* should be memmove */
+				memmove (c + i, c + i + 1, l - i);
 			else {
 				c[i] = '\0';
 				break;
@@ -2244,7 +2259,7 @@ scan_request(char *c)
 				while (de && de->nr != i)
 					de = de->next;
 				if (!de) {
-					de = (STRDEF *) malloc(sizeof(STRDEF));
+					de = (STRDEF *) xmalloc(sizeof(STRDEF));
 					de->nr = i;
 					de->slen = 0;
 					de->next = strdef;
@@ -2293,7 +2308,7 @@ scan_request(char *c)
 				if (!de) {
 					char   *h;
 
-					de = (STRDEF *) malloc(sizeof(STRDEF));
+					de = (STRDEF *) xmalloc(sizeof(STRDEF));
 					de->nr = i;
 					de->slen = 0;
 					de->next = strdef;
@@ -2548,7 +2563,6 @@ scan_request(char *c)
 					h = name;
 				if (stat(h, &stbuf) != -1)
 					l = stbuf.st_size;
-				buf = stralloc(l + 4);
 #if NOCGI
 				if (!out_length) {
 					char   *t, *s;
@@ -2986,7 +3000,7 @@ scan_request(char *c)
 				while (intd && intd->nr != i)
 					intd = intd->next;
 				if (!intd) {
-					intd = (INTDEF *) malloc(sizeof(INTDEF));
+					intd = (INTDEF *) xmalloc(sizeof(INTDEF));
 					intd->nr = i;
 					intd->val = 0;
 					intd->incr = 0;
@@ -3059,7 +3073,7 @@ scan_request(char *c)
 							free(de->st);
 						de->st = h;
 					} else {
-						de = (STRDEF *) malloc(sizeof(STRDEF));
+						de = (STRDEF *) xmalloc(sizeof(STRDEF));
 						de->nr = i;
 						de->next = defdef;
 						de->st = h;
@@ -3791,7 +3805,7 @@ scan_troff(char *c, int san, char **result)
 			   && *(h + 1) && islower(*(h + 1))
 			   && *(h + 2) && isspace(*(h + 2))) {
 			/*
-			 * BSD imbedded command eg ".It Fl Ar arg1 Fl Ar
+			 * BSD embedded command eg ".It Fl Ar arg1 Fl Ar
 			 * arg2"
 			 */
 			FLUSHIBP;
@@ -3972,6 +3986,7 @@ scan_troff_mandoc(char *c, int san, char **result)
 	return ret;
 }
 
+int
 main(int argc, char **argv)
 {
 	FILE   *f;

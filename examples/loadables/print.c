@@ -122,6 +122,7 @@ print_builtin (list)
 	case 'f':
 	  pfmt = list_optarg;
 	  break;
+	CASE_HELPOPT;
 	default:
 	  builtin_usage ();
 	  return (EX_USAGE);
@@ -180,7 +181,8 @@ printargs (list, ofp)
   for (sawc = 0, l = list; l; l = l->next)
     {
       ostr = ansicstr (l->word->word, strlen (l->word->word), 0, &sawc, (int *)0);
-      fprintf (ofp, "%s", ostr);
+      if (ostr)
+	fprintf (ofp, "%s", ostr);
       free (ostr);
       if (sawc)
         return (0);

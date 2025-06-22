@@ -3,7 +3,7 @@
 /* See Makefile for compilation details. */
 
 /*
-   Copyright (C) 1999-2009 Free Software Foundation, Inc.
+   Copyright (C) 1999-2021 Free Software Foundation, Inc.
 
    This file is part of GNU Bash.
    Bash is free software: you can redistribute it and/or modify
@@ -30,6 +30,7 @@
 
 extern char *ttyname ();
 
+int
 tty_builtin (list)
      WORD_LIST *list;
 {
@@ -45,6 +46,7 @@ tty_builtin (list)
 	case 's':
 	  sflag = 1;
 	  break;
+	CASE_HELPOPT;
 	default:
 	  builtin_usage ();
 	  return (EX_USAGE);
@@ -53,6 +55,7 @@ tty_builtin (list)
   list = loptend;
 
   t = ttyname (0);
+  QUIT;
   if (sflag == 0)
     puts (t ? t : "not a tty");
   return (t ? EXECUTION_SUCCESS : EXECUTION_FAILURE);

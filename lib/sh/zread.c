@@ -1,6 +1,6 @@
 /* zread - read data from file descriptor into buffer with retries */
 
-/* Copyright (C) 1999-2002 Free Software Foundation, Inc.
+/* Copyright (C) 1999-2020 Free Software Foundation, Inc.
 
    This file is part of GNU Bash, the Bourne Again SHell.
 
@@ -26,6 +26,7 @@
 #  include <unistd.h>
 #endif
 
+#include <signal.h>
 #include <errno.h>
 
 #if !defined (errno)
@@ -35,6 +36,17 @@ extern int errno;
 #ifndef SEEK_CUR
 #  define SEEK_CUR 1
 #endif
+
+#ifndef ZBUFSIZ
+#  define ZBUFSIZ 4096
+#endif
+
+extern int executing_builtin;
+
+extern void check_signals_and_traps (void);
+extern void check_signals (void);
+extern int signal_is_trapped (int);
+extern int read_builtin_timeout (int);
 
 /* Read LEN bytes from FD into BUF.  Retry the read on EINTR.  Any other
    error causes the loop to break. */
@@ -46,8 +58,23 @@ zread (fd, buf, len)
 {
   ssize_t r;
 
-  while ((r = read (fd, buf, len)) < 0 && errno == EINTR)
-    ;
+  check_signals ();	/* check for signals before a blocking read */
+  /* should generalize into a mechanism where different parts of the shell can
+     `register' timeouts and have them checked here. */
+  while (((r = read_builtin_timeout (fd)) < 0 || (r = read (fd, buf, len)) < 0) &&
+	     errno == EINTR)
+    {
+      int t;
+      t = errno;
+      /* XXX - bash-5.0 */
+      /* We check executing_builtin and run traps here for backwards compatibility */
+      if (executing_builtin)
+	check_signals_and_traps ();	/* XXX - should it be check_signals()? */
+      else
+	check_signals ();
+      errno = t;
+    }
+
   return r;
 }
 
@@ -90,6 +117,7 @@ zreadintr (fd, buf, len)
      char *buf;
      size_t len;
 {
+  check_signals ();
   return (read (fd, buf, len));
 }
 
@@ -97,7 +125,7 @@ zreadintr (fd, buf, len)
    in read(2).  This does some local buffering to avoid many one-character
    calls to read(2), like those the `read' builtin performs. */
 
-static char lbuf[128];
+static char lbuf[ZBUFSIZ];
 static size_t lind, lused;
 
 ssize_t
@@ -148,6 +176,34 @@ zreadcintr (fd, cp)
   return 1;
 }
 
+/* Like zreadc, but read a specified number of characters at a time.  Used
+   for `read -N'. */
+ssize_t
+zreadn (fd, cp, len)
+     int fd;
+     char *cp;
+     size_t len;
+{
+  ssize_t nr;
+
+  if (lind == lused || lused == 0)
+    {
+      if (len > sizeof (lbuf))
+	len = sizeof (lbuf);
+      nr = zread (fd, lbuf, len);
+      lind = 0;
+      if (nr <= 0)
+	{
+	  lused = 0;
+	  return nr;
+	}
+      lused = nr;
+    }
+  if (cp)
+    *cp = lbuf[lind++];
+  return 1;
+}
+
 void
 zreset ()
 {
@@ -160,14 +216,13 @@ void
 zsyncfd (fd)
      int fd;
 {
-  off_t off;
-  int r;
+  off_t off, r;
 
   off = lused - lind;
   r = 0;
   if (off > 0)
     r = lseek (fd, -off, SEEK_CUR);
 
-  if (r >= 0)
+  if (r != -1)
     lused = lind = 0;
 }

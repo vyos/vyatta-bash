@@ -1,6 +1,6 @@
 /* siglist.c -- signal list for those machines that don't have one. */
 
-/* Copyright (C) 1989-2009 Free Software Foundation, Inc.
+/* Copyright (C) 1989-2021 Free Software Foundation, Inc.
 
    This file is part of GNU Bash, the Bourne Again SHell.
 
@@ -23,7 +23,8 @@
 #if !defined (HAVE_SYS_SIGLIST) && !defined (HAVE_UNDER_SYS_SIGLIST) && !defined (HAVE_STRSIGNAL)
 
 #include <stdio.h>
-#include "bashtypes.h"
+#include "command.h"
+#include "general.h"
 #include <signal.h>
 
 #include "siglist.h"
@@ -33,7 +34,6 @@
 #endif
 
 #include "bashintl.h"
-#include "xmalloc.h"
 
 char *sys_siglist[NSIG];
 
@@ -220,7 +220,7 @@ initialize_siglist ()
       if (!sys_siglist[i])
 	{
 	  sys_siglist[i] =
-	    (char *)xmalloc (10 + strlen (_("Unknown Signal #")));
+	    (char *)xmalloc (INT_STRLEN_BOUND (int) + 1 + strlen (_("Unknown Signal #%d")));
 
 	  sprintf (sys_siglist[i], _("Unknown Signal #%d"), i);
 	}

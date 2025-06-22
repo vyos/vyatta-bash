@@ -1,6 +1,6 @@
 /* strtoumax - convert string representation of a number into an uintmax_t value. */
 
-/* Copyright 1999-2009 Free Software Foundation, Inc.
+/* Copyright 1999-2020 Free Software Foundation, Inc.
 
    This file is part of GNU Bash, the Bourne Again SHell.
 
@@ -45,14 +45,14 @@
 "this configure-time declaration test was not run"
 #endif
 #if !HAVE_DECL_STRTOUL
-extern unsigned long strtoul __P((const char *, char **, int));
+extern unsigned long strtoul PARAMS((const char *, char **, int));
 #endif
 
 #ifndef HAVE_DECL_STRTOULL
 "this configure-time declaration test was not run"
 #endif
-#if !HAVE_DECL_STRTOULL && HAVE_UNSIGNED_LONG_LONG
-extern unsigned long long strtoull __P((const char *, char **, int));
+#if !HAVE_DECL_STRTOULL && HAVE_UNSIGNED_LONG_LONG_INT
+extern unsigned long long strtoull PARAMS((const char *, char **, int));
 #endif
 
 #ifdef strtoumax
@@ -65,7 +65,7 @@ strtoumax (ptr, endptr, base)
      char **endptr;
      int base;
 {
-#if HAVE_UNSIGNED_LONG_LONG
+#if HAVE_UNSIGNED_LONG_LONG_INT
   verify (size_is_that_of_unsigned_long_or_unsigned_long_long,
 	  (sizeof (uintmax_t) == sizeof (unsigned long) ||
 	   sizeof (uintmax_t) == sizeof (unsigned long long)));
@@ -86,20 +86,20 @@ main ()
 {
   char *p, *endptr;
   uintmax_t x;
-#if HAVE_UNSIGNED_LONG_LONG
+#if HAVE_UNSIGNED_LONG_LONG_INT
   unsigned long long y;
 #endif
   unsigned long z;
 
   printf ("sizeof uintmax_t: %d\n", sizeof (uintmax_t));
 
-#if HAVE_UNSIGNED_LONG_LONG
+#if HAVE_UNSIGNED_LONG_LONG_INT
   printf ("sizeof unsigned long long: %d\n", sizeof (unsigned long long));
 #endif
   printf ("sizeof unsigned long: %d\n", sizeof (unsigned long));
 
   x = strtoumax("42", &endptr, 10);
-#if HAVE_LONG_LONG
+#if HAVE_LONG_LONG_INT
   y = strtoull("42", &endptr, 10);
 #else
   y = 0;

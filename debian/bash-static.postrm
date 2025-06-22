@@ -1,9 +1,0 @@
-#! /bin/sh -e
-
-if [ -x /usr/sbin/remove-shell ]; then
-    /usr/sbin/remove-shell /bin/bash-static
-fi
-
-#DEBHELPER#
-
-exit 0

@@ -5,9 +5,9 @@
 .\"     Case Western Reserve University
 .\"     chet@po.cwru.edu
 .\"
-.\"     Last Change: Tue Apr  3 15:46:30 EDT 2007
+.\"     Last Change: Sun Aug  2 15:39:07 EDT 2020
 .\"
-.TH BASHBUG 1 "1998 July 30" "GNU Bash-4.0"
+.TH BASHBUG 1 "2020 August 1" "GNU Bash 5.1"
 .SH NAME
 bashbug \- report a bug in bash
 .SH SYNOPSIS
@@ -43,8 +43,11 @@ Specifies the preferred editor. If
 .B EDITOR
 is not set,
 .B bashbug
-defaults to
+attempts to locate a number of alternative editors, including
 .BR emacs .
+If
+.B bashbug
+cannot locate any of the alternative editors, it attempts to execute \fBvi\fP.
 .TP
 .B HOME
 Directory in which the failed bug report is saved if the mail fails.

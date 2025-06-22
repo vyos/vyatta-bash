@@ -1,6 +1,6 @@
 /* eaccess.c - eaccess replacement for the shell, plus other access functions. */
 
-/* Copyright (C) 2006 Free Software Foundation, Inc.
+/* Copyright (C) 2006-2020 Free Software Foundation, Inc.
 
    This file is part of GNU Bash, the Bourne Again SHell.
 
@@ -52,10 +52,10 @@ extern int errno;
 #define F_OK 0
 #endif /* R_OK */
 
-static int path_is_devfd __P((const char *));
-static int sh_stataccess __P((char *, int));
+static int path_is_devfd PARAMS((const char *));
+static int sh_stataccess PARAMS((const char *, int));
 #if HAVE_DECL_SETREGID
-static int sh_euidaccess __P((char *, int));
+static int sh_euidaccess PARAMS((const char *, int));
 #endif
 
 static int
@@ -82,6 +82,8 @@ sh_stat (path, finfo)
      const char *path;
      struct stat *finfo;
 {
+  static char *pbuf = 0;
+
   if (*path == '\0')
     {
       errno = ENOENT;
@@ -89,7 +91,9 @@ sh_stat (path, finfo)
     }
   if (path[0] == '/' && path[1] == 'd' && strncmp (path, "/dev/fd/", 8) == 0)
     {
-#if !defined (HAVE_DEV_FD)
+      /* If stating /dev/fd/n doesn't produce the same results as fstat of
+	 FD N, then define DEV_FD_STAT_BROKEN */
+#if !defined (HAVE_DEV_FD) || defined (DEV_FD_STAT_BROKEN)
       intmax_t fd;
       int r;
 
@@ -106,7 +110,7 @@ sh_stat (path, finfo)
      trailing slash.  Make sure /dev/fd/xx really uses DEV_FD_PREFIX/xx.
      On most systems, with the notable exception of linux, this is
      effectively a no-op. */
-      char pbuf[32];
+      pbuf = xrealloc (pbuf, sizeof (DEV_FD_PREFIX) + strlen (path + 8));
       strcpy (pbuf, DEV_FD_PREFIX);
       strcat (pbuf, path + 8);
       return (stat (pbuf, finfo));
@@ -133,7 +137,7 @@ sh_stat (path, finfo)
    executable.  This version uses stat(2). */
 static int
 sh_stataccess (path, mode)
-     char *path;
+     const char *path;
      int mode;
 {
   struct stat st;
@@ -170,7 +174,7 @@ sh_stataccess (path, mode)
    the effective and real uid and gid as appropriate. */
 static int
 sh_euidaccess (path, mode)
-     char *path;
+     const char *path;
      int mode;
 {
   int r, e;
@@ -195,14 +199,25 @@ sh_euidaccess (path, mode)
 
 int
 sh_eaccess (path, mode)
-     char *path;
+     const char *path;
      int mode;
 {
+  int ret;
+
   if (path_is_devfd (path))
     return (sh_stataccess (path, mode));
 
-#if defined (HAVE_EACCESS)		/* FreeBSD */
-  return (eaccess (path, mode));
+#if (defined (HAVE_FACCESSAT) && defined (AT_EACCESS)) || defined (HAVE_EACCESS)
+#  if defined (HAVE_FACCESSAT) && defined (AT_EACCESS)
+  ret = faccessat (AT_FDCWD, path, mode, AT_EACCESS);
+#  else		/* HAVE_EACCESS */	/* FreeBSD */
+  ret = eaccess (path, mode);	/* XXX -- not always correct for X_OK */
+#  endif	/* HAVE_EACCESS */
+#  if defined (__FreeBSD__) || defined (SOLARIS) || defined (_AIX)
+  if (ret == 0 && current_user.euid == 0 && mode == X_OK)
+    return (sh_stataccess (path, mode));
+#  endif	/* __FreeBSD__ || SOLARIS || _AIX */
+  return ret;
 #elif defined (EFF_ONLY_OK)		/* SVR4(?), SVR4.2 */
   return access (path, mode|EFF_ONLY_OK);
 #else
@@ -215,7 +230,14 @@ sh_eaccess (path, mode)
 #  endif
 
   if (current_user.uid == current_user.euid && current_user.gid == current_user.egid)
-    return (access (path, mode));  
+    {
+      ret = access (path, mode);
+#if defined (__FreeBSD__) || defined (SOLARIS)
+      if (ret == 0 && current_user.euid == 0 && mode == X_OK)
+	return (sh_stataccess (path, mode));
+#endif
+      return ret;
+    }
 
   return (sh_stataccess (path, mode));
 #endif

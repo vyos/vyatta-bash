@@ -1,7 +1,7 @@
 /* alias.c -- Not a full alias, but just the kind that we use in the
    shell.  Csh style alias is somewhere else (`over there, in a box'). */
 
-/* Copyright (C) 1987-2009 Free Software Foundation, Inc.
+/* Copyright (C) 1987-2021 Free Software Foundation, Inc.
 
    This file is part of GNU Bash, the Bourne Again SHell.
 
@@ -42,19 +42,23 @@
 #  include "pcomplete.h"
 #endif
 
-#define ALIAS_HASH_BUCKETS	16	/* must be power of two */
+#if defined (HAVE_MBSTR_H) && defined (HAVE_MBSCHR)
+#  include <mbstr.h>		/* mbschr */
+#endif
 
-typedef int sh_alias_map_func_t __P((alias_t *));
+#define ALIAS_HASH_BUCKETS	64	/* must be power of two */
 
-static void free_alias_data __P((PTR_T));
-static alias_t **map_over_aliases __P((sh_alias_map_func_t *));
-static void sort_aliases __P((alias_t **));
-static int qsort_alias_compare __P((alias_t **, alias_t **));
+typedef int sh_alias_map_func_t PARAMS((alias_t *));
+
+static void free_alias_data PARAMS((PTR_T));
+static alias_t **map_over_aliases PARAMS((sh_alias_map_func_t *));
+static void sort_aliases PARAMS((alias_t **));
+static int qsort_alias_compare PARAMS((alias_t **, alias_t **));
 
 #if defined (READLINE)
-static int skipquotes __P((char *, int));
-static int skipws __P((char *, int));
-static int rd_token __P((char *, int));
+static int skipquotes PARAMS((char *, int));
+static int skipws PARAMS((char *, int));
+static int rd_token PARAMS((char *, int));
 #endif
 
 /* Non-zero means expand all words on the line.  Otherwise, expand
@@ -110,7 +114,7 @@ add_alias (name, value)
   alias_t *temp;
   int n;
 
-  if (!aliases)
+  if (aliases == 0)
     {
       initialize_aliases ();
       temp = (alias_t *)NULL;
@@ -123,9 +127,12 @@ add_alias (name, value)
       free (temp->value);
       temp->value = savestring (value);
       temp->flags &= ~AL_EXPANDNEXT;
-      n = value[strlen (value) - 1];
-      if (n == ' ' || n == '\t')
-	temp->flags |= AL_EXPANDNEXT;
+      if (value[0])
+	{
+	  n = value[strlen (value) - 1];
+	  if (n == ' ' || n == '\t')
+	    temp->flags |= AL_EXPANDNEXT;
+	}
     }
   else
     {
@@ -134,9 +141,12 @@ add_alias (name, value)
       temp->value = savestring (value);
       temp->flags = 0;
 
-      n = value[strlen (value) - 1];
-      if (n == ' ' || n == '\t')
-	temp->flags |= AL_EXPANDNEXT;
+      if (value[0])
+	{
+	  n = value[strlen (value) - 1];
+	  if (n == ' ' || n == '\t')
+	    temp->flags |= AL_EXPANDNEXT;
+	}
 
       elt = hash_insert (savestring (name), aliases, HASH_NOSRCH);
       elt->data = temp;
@@ -154,6 +164,10 @@ free_alias_data (data)
   register alias_t *a;
 
   a = (alias_t *)data;
+
+  if (a->flags & AL_BEINGEXPANDED)
+    clear_string_list_expander (a);	/* call back to the parser */
+
   free (a->value);
   free (a->name);
   free (data);
@@ -319,6 +333,8 @@ skipquotes (string, start)
       if (string[i] == '\\')
 	{
 	  i++;		/* skip backslash-quoted quote characters, too */
+	  if (string[i] == 0)
+	    break;
 	  continue;
 	}
 
@@ -364,6 +380,8 @@ skipws (string, start)
       if (string[i] == '\\')
 	{
 	  peekc = string[i+1];
+	  if (peekc == 0)
+	    break;
 	  if (ISLETTER (peekc))
 	    backslash_quoted_word++;	/* this is a backslash-quoted word */
 	  else
@@ -429,6 +447,8 @@ rd_token (string, start)
       if (string[i] == '\\')
 	{
 	  i++;	/* skip backslash-escaped character */
+	  if (string[i] == 0)
+	    break;
 	  continue;
 	}
 

@@ -272,7 +272,7 @@ _nl_make_l10nflist (l10nfile_list, dirlist, dirlist_len, mask, language,
     }
   if ((mask & (XPG_MODIFIER | CEN_AUDIENCE)) != 0)
     {
-      /* This component can be part of both syntaces but has different
+      /* This component can be part of both syntaxes but has different
 	 leading characters.  For CEN we use `+', else `@'.  */
       *cp++ = (mask & CEN_AUDIENCE) != 0 ? '+' : '@';
       cp = stpcpy (cp, modifier);
@@ -332,7 +332,10 @@ _nl_make_l10nflist (l10nfile_list, dirlist, dirlist_len, mask, language,
 	    + (((dirlist_count << pop (mask)) + (dirlist_count > 1 ? 1 : 0))
 	       * sizeof (struct loaded_l10nfile *)));
   if (retval == NULL)
-    return NULL;
+    {
+      free (abs_filename);
+      return NULL;
+    }
 
   retval->filename = abs_filename;
 

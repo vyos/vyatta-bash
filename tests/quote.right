@@ -66,3 +66,117 @@ argv[2] = <ab>
 ${
 argv[1] = <(")>
 argv[1] = <(")>
+string \
+string \
+string \
+string \
+string \
+string \}
+'weferfds'\''dsfsdf' 
+'weferfdsdsfsdf'
+'weferfds'\''dsfsdf'
+'weferfds'\\dsfsdf'
+testdd ddtest
+testdd '\''ddtest
+testdddding
+testdddding
+test'ing
+test'ing
+test'string
+a'b'c
+foo b   c baz
+foo 'bar baz
+argv[1] = <>
+argv[1] = <>
+argv[1] = <>
+argv[1] = <>
+argv[1] = <>
+argv[1] = <>
+argv[1] = <>
+argv[1] = <>
+argv[2] = <>
+argv[1] = <>
+argv[2] = <>
+argv[1] = <>
+=====
+argv[1] = <>
+argv[1] = <>
+argv[1] = <>
+argv[1] = <>
+argv[2] = <>
+argv[1] = <>
+argv[1] = <>
+argv[1] = <>
+argv[2] = <>
+=====
+argv[1] = <>
+argv[1] = <>
+argv[1] = <>
+argv[1] = <>
+argv[1] = <>
+argv[2] = <>
+argv[1] = <>
+argv[2] = <>
+argv[1] = <>
+=====
+argv[1] = <>
+argv[1] = <>
+argv[1] = <>
+argv[1] = <>
+argv[1] = <>
+argv[2] = <>
+argv[1] = <>
+argv[2] = <>
+argv[1] = <>
+argv[1] = <4>
+argv[2] = <>
+argv[1] = <ab>
+argv[2] = <>
+argv[1] = <ab>
+argv[2] = <>
+argv[1] = <ab>
+argv[2] = <>
+argv[1] = <ab>
+argv[2] = <>
+argv[1] = <ab ''>
+argv[1] = <ab >
+argv[1] = <ab ''>
+argv[1] = <ab >
+0
+1
+1
+1
+1
+1
+1
+1
+2
+2
+2
+2
+0
+1
+1
+1
+1
+1
+1
+1
+2
+2
+2
+2
+0
+0
+0
+2
+2
+4
+4
+3
+argv[1] = <^?>
+argv[1] = <^?>
+argv[1] = <^?>
+argv[1] = <^?>
+argv[1] = <^?>
+argv[1] = <^?>

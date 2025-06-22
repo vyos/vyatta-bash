@@ -79,17 +79,21 @@ file_head (fp, cnt)
     {
       while ((ch = getc (fp)) != EOF)
 	{
+	  QUIT;
 	  if (putchar (ch) == EOF)
 	    {
 	      builtin_error ("write error: %s", strerror (errno));
 	      return EXECUTION_FAILURE;
 	    }
+	  QUIT;
 	  if (ch == '\n')
 	    break;
 	}
     }
+  return (EXECUTION_SUCCESS);
 }
 
+int
 head_builtin (list)
      WORD_LIST *list;
 {
@@ -115,6 +119,7 @@ head_builtin (list)
 	      return (EX_USAGE);
 	    }
 	  break;
+	CASE_HELPOPT;
 	default:
 	  builtin_usage ();
 	  return (EX_USAGE);
@@ -138,6 +143,7 @@ head_builtin (list)
 	  printf ("%s==> %s <==\n", opt ? "" : "\n", l->word->word);
 	  opt = 0;
 	}
+      QUIT;
       rval = file_head (fp, nline);
       fclose (fp);
     }

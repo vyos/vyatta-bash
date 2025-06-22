@@ -1,6 +1,6 @@
 /* version.c -- distribution and version numbers. */
 
-/* Copyright (C) 1989-2009 Free Software Foundation, Inc.
+/* Copyright (C) 1989-2022 Free Software Foundation, Inc.
 
    This file is part of GNU Bash, the Bourne Again SHell.
 
@@ -43,7 +43,7 @@ const char * const release_status = (char *)0;
 #endif
 const char * const sccs_version = SCCSVERSION;
 
-const char * const bash_copyright = N_("Copyright (C) 2009 Free Software Foundation, Inc.");
+const char * const bash_copyright = N_("Copyright (C) 2022 Free Software Foundation, Inc.");
 const char * const bash_license = N_("License GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>\n");
 
 /* If == 31, shell compatible with bash-3.1, == 32 with bash-3.2, and so on */
@@ -52,8 +52,8 @@ int shell_compatibility_level = DEFAULT_COMPAT_LEVEL;
 /* Functions for getting, setting, and displaying the shell version. */
 
 /* Forward declarations so we don't have to include externs.h */
-extern char *shell_version_string __P((void));
-extern void show_shell_version __P((int));
+extern char *shell_version_string PARAMS((void));
+extern void show_shell_version PARAMS((int));
 
 /* Give version information about this shell. */
 char *
@@ -64,13 +64,13 @@ shell_version_string ()
   if (tt[0] == '\0')
     {
       if (release_status)
-#if defined (HAVE_SNPRINTF)
+#if HAVE_SNPRINTF
 	snprintf (tt, sizeof (tt), "%s.%d(%d)-%s", dist_version, patch_level, build_version, release_status);
 #else
 	sprintf (tt, "%s.%d(%d)-%s", dist_version, patch_level, build_version, release_status);
 #endif
       else
-#if defined (HAVE_SNPRINTF)
+#if HAVE_SNPRINTF
 	snprintf (tt, sizeof (tt), "%s.%d(%d)", dist_version, patch_level, build_version);
 #else
 	sprintf (tt, "%s.%d(%d)", dist_version, patch_level, build_version);
@@ -88,7 +88,7 @@ show_shell_version (extended)
     {
       printf ("%s\n", _(bash_copyright));
       printf ("%s\n", _(bash_license));
-      printf (_("This is free software; you are free to change and redistribute it.\n"));
-      printf (_("There is NO WARRANTY, to the extent permitted by law.\n"));
+      printf ("%s\n", _("This is free software; you are free to change and redistribute it."));
+      printf ("%s\n", _("There is NO WARRANTY, to the extent permitted by law."));
     }
 }

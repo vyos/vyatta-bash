@@ -1,6 +1,6 @@
 /* imalloc.h -- internal malloc definitions shared by source files. */
 
-/* Copyright (C) 2001-2003 Free Software Foundation, Inc.
+/* Copyright (C) 2001-2020 Free Software Foundation, Inc.
 
    This file is part of GNU Bash, the Bourne Again SHell.
 
@@ -32,6 +32,11 @@
 
 #define MALLOC_WRAPFUNCS
 
+/* If defined, as it is by default, use the lesscore() function to attempt
+   to reduce the top of the heap when freeing memory blocks larger than a
+   defined threshold. */
+#define USE_LESSCORE
+
 /* Generic pointer type. */
 #ifndef PTR_T
 #  if defined (__STDC__)
@@ -45,11 +50,11 @@
 #  define NULL 0
 #endif
 
-#if !defined (__STRING)
+#if !defined (CPP_STRING)
 #  if defined (HAVE_STRINGIZE)
-#    define __STRING(x) #x
+#    define CPP_STRING(x) #x
 #  else
-#    define __STRING(x) "x"
+#    define CPP_STRING(x) "x"
 #  endif /* !HAVE_STRINGIZE */
 #endif /* !__STRING */
 
@@ -67,11 +72,11 @@
 #  endif /* HAVE_BCOPY */
 #endif /* !__GNUC__ */
 
-#if !defined (__P)
+#if !defined (PARAMS)
 #  if defined (__STDC__) || defined (__GNUC__) || defined (__cplusplus) || defined (PROTOTYPES)
-#    define __P(protos) protos
+#    define PARAMS(protos) protos
 #  else 
-#    define __P(protos) ()
+#    define PARAMS(protos) ()
 #  endif
 #endif
 
@@ -164,5 +169,10 @@ do {									\
 #else
 #  define _(x)	x
 #endif
+
+#include <signal.h>
+
+extern void _malloc_block_signals PARAMS((sigset_t *, sigset_t *));
+extern void _malloc_unblock_signals PARAMS((sigset_t *, sigset_t *));
 
 #endif /* _IMALLOC_H */

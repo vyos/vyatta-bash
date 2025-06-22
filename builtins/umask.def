@@ -1,7 +1,7 @@
 This file is umask.def, from which is created umask.c.
 It implements the builtin "umask" in Bash.
 
-Copyright (C) 1987-2009 Free Software Foundation, Inc.
+Copyright (C) 1987-2020 Free Software Foundation, Inc.
 
 This file is part of GNU Bash, the Bourne Again SHell.
 
@@ -61,18 +61,14 @@ $END
 #include "common.h"
 #include "bashgetopt.h"
 
-#ifdef __LCC__
-#define mode_t int
-#endif
-
 /* **************************************************************** */
 /*                                                                  */
 /*                     UMASK Builtin and Helpers                    */
 /*                                                                  */
 /* **************************************************************** */
 
-static void print_symbolic_umask __P((mode_t));
-static int symbolic_umask __P((WORD_LIST *));
+static void print_symbolic_umask PARAMS((mode_t));
+static int symbolic_umask PARAMS((WORD_LIST *));
 
 /* Set or display the mask used by the system when creating files.  Flag
    of -S means display the umask in a symbolic mode. */
@@ -95,6 +91,7 @@ umask_builtin (list)
 	case 'p':
 	  pflag++;
 	  break;
+	CASE_HELPOPT;
 	default:
 	  builtin_usage ();
 	  return (EX_USAGE);
@@ -149,8 +146,12 @@ umask_builtin (list)
 /* Print the umask in a symbolic form.  In the output, a letter is
    printed if the corresponding bit is clear in the umask. */
 static void
+#if defined (__STDC__)
+print_symbolic_umask (mode_t um)
+#else
 print_symbolic_umask (um)
      mode_t um;
+#endif
 {
   char ubits[4], gbits[4], obits[4];		/* u=rwx,g=rwx,o=rwx */
   int i;

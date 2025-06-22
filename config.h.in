@@ -1,6 +1,6 @@
 /* config.h -- Configuration file for bash. */
 
-/* Copyright (C) 1987-2009 Free Software Foundation, Inc.
+/* Copyright (C) 1987-2009,2011-2012,2013-2019 Free Software Foundation, Inc.
 
    This file is part of GNU Bash, the Bourne Again SHell.
 
@@ -20,6 +20,8 @@
 
 #ifndef _CONFIG_H_
 #define _CONFIG_H_
+
+/* Template settings for autoconf */
 
 /* Configuration feature settings controllable by autoconf. */
 
@@ -160,15 +162,24 @@
    memory contents on malloc() and free(). */
 #undef MEMSCRAMBLE
 
-/* Define AFS if you are using Transarc's AFS. */
-#undef AFS
-
 /* Define for case-modifying variable attributes; variables modified on
    assignment */
 #undef CASEMOD_ATTRS
 
 /* Define for case-modifying word expansions */
 #undef CASEMOD_EXPANSIONS
+
+/* Define to make the `direxpand' shopt option enabled by default. */
+#undef DIRCOMPLETE_EXPAND_DEFAULT
+
+/* Define to make the `globasciiranges' shopt option enabled by default. */
+#undef GLOBASCII_DEFAULT
+
+/* Define to allow functions to be imported from the environment. */
+#undef FUNCTION_IMPORT
+
+/* Define AFS if you are using Transarc's AFS. */
+#undef AFS
 
 #undef ENABLE_NLS
 
@@ -195,13 +206,14 @@
 #undef HAVE_LONG_DOUBLE
 
 #undef PROTOTYPES
+#undef __PROTOTYPES
 
 #undef __CHAR_UNSIGNED__
 
-/* Define if the compiler supports `long long' variables. */
-#undef HAVE_LONG_LONG
+/* Define if the compiler supports `long long int' variables. */
+#undef HAVE_LONG_LONG_INT
 
-#undef HAVE_UNSIGNED_LONG_LONG
+#undef HAVE_UNSIGNED_LONG_LONG_INT
 
 /* The number of bytes in a int.  */
 #undef SIZEOF_INT
@@ -212,11 +224,20 @@
 /* The number of bytes in a pointer to char.  */
 #undef SIZEOF_CHAR_P
 
+/* The number of bytes in a size_t.  */
+#undef SIZEOF_SIZE_T
+
 /* The number of bytes in a double (hopefully 8). */
 #undef SIZEOF_DOUBLE
 
+/* The number of bytes in an `intmax_t'. */
+#undef SIZEOF_INTMAX_T
+
 /* The number of bytes in a `long long', if we have one. */
 #undef SIZEOF_LONG_LONG
+
+/* The number of bytes in a `wchar_t', if supported */
+#undef SIZEOF_WCHAR_T
 
 /* System paths */
 
@@ -225,6 +246,8 @@
 /* Characteristics of the system's header files and libraries that affect
    the compilation environment. */
 
+/* These are set by AC_USE_SYSTEM_EXTENSIONS */
+
 /* Define if the system does not provide POSIX.1 features except
    with this defined.  */
 #undef _POSIX_1_SOURCE
@@ -232,11 +255,18 @@
 /* Define if you need to in order for stat and other things to work.  */
 #undef _POSIX_SOURCE
 
-/* Define to use GNU libc extensions */
+/* Define to use GNU libc extensions. */
 #undef _GNU_SOURCE
 
-/* Define if you have the ANSI C header files.  */
-#undef STDC_HEADERS
+/* Define to enable general system extensions on Solaris. */
+#undef __EXTENSIONS__
+
+/* General system extensions on AIX */
+#undef _ALL_SOURCE
+
+#undef _POSIX_PTHREAD_SEMANTICS
+#undef _TANDEM_SOURCE
+#undef _MINIX
 
 /* Memory management functions. */
 
@@ -258,6 +288,11 @@
 /* Define if you have <alloca.h> and it should be used (not on Ultrix).  */
 #undef HAVE_ALLOCA_H
 
+/* Define if major/minor/makedev is defined in <sys/mkdev.h> */
+#undef MAJOR_IN_MAKEDEV
+
+/* Define if major/minor/makedev is defined in <sys/sysmacros.h> */
+#undef MAJOR_IN_SYSMACROS
 
 /* SYSTEM TYPES */
 
@@ -308,6 +343,9 @@
 
 /* Define to `unsigned long' if <stdint.h> doesn't define. */
 #undef uintmax_t
+
+/* Define to integer type wide enough to hold a pointer if <stdint.h> doesn't define. */
+#undef uintptr_t
  
 /* Define to `int' if <sys/types.h> doesn't define.  */
 #undef uid_t
@@ -415,6 +453,19 @@
 
 #undef HAVE_STRUCT_TIMEZONE
 
+#undef WEXITSTATUS_OFFSET
+
+#undef HAVE_STRUCT_TIMESPEC
+#undef TIME_H_DEFINES_STRUCT_TIMESPEC
+#undef SYS_TIME_H_DEFINES_STRUCT_TIMESPEC
+#undef PTHREAD_H_DEFINES_STRUCT_TIMESPEC
+
+#undef HAVE_STRUCT_STAT_ST_ATIM_TV_NSEC
+#undef TYPEOF_STRUCT_STAT_ST_ATIM_IS_STRUCT_TIMESPEC
+#undef HAVE_STRUCT_STAT_ST_ATIMESPEC_TV_NSEC
+#undef HAVE_STRUCT_STAT_ST_ATIMENSEC
+#undef HAVE_STRUCT_STAT_ST_ATIM_ST__TIM_TV_NSEC
+
 /* Characteristics of definitions in the system header files. */
 
 #undef HAVE_GETPW_DECLS
@@ -422,6 +473,9 @@
 #undef HAVE_RESOURCE
 
 #undef HAVE_LIBC_FNM_EXTMATCH
+
+/* Define if you have <linux/audit.h> and it defines AUDIT_USER_TTY */
+#undef HAVE_DECL_AUDIT_USER_TTY
 
 #undef HAVE_DECL_CONFSTR
 
@@ -462,11 +516,6 @@
 
 #undef PGRP_PIPE
 
-/* Define if the setvbuf function takes the buffering type as its second
-   argument and the buffer pointer as the third, as on System V
-   before release 3.  */
-#undef SETVBUF_REVERSED
-
 #undef STAT_MACROS_BROKEN
 
 #undef ULIMIT_MAXFDS
@@ -478,8 +527,6 @@
 #undef HAVE_STD_UNSETENV
 
 #undef HAVE_PRINTF_A_FORMAT
-
-#undef CTYPE_NON_ASCII
 
 /* Define if you have <langinfo.h> and nl_langinfo(CODESET). */
 #undef HAVE_LANGINFO_CODESET
@@ -503,12 +550,6 @@
 
 /* Type and behavior of signal handling functions. */
 
-/* Define as the return type of signal handlers (int or void).  */
-#undef RETSIGTYPE
-
-/* Define if return type of signal handlers is void */
-#undef VOID_SIGHANDLER
-
 #undef MUST_REINSTALL_SIGHANDLERS
 
 #undef HAVE_BSD_SIGNALS
@@ -519,8 +560,10 @@
 
 #undef UNUSABLE_RT_SIGNALS
 
-
 /* Presence of system and C library functions. */
+
+/* Define if you have the arc4random function.  */
+#undef HAVE_ARC4RANDOM
 
 /* Define if you have the asprintf function.  */
 #undef HAVE_ASPRINTF
@@ -530,6 +573,9 @@
 
 /* Define if you have the bzero function.  */
 #undef HAVE_BZERO
+
+/* Define if you have the chown function.  */
+#undef HAVE_CHOWN
 
 /* Define if you have the confstr function.  */
 #undef HAVE_CONFSTR
@@ -546,17 +592,26 @@
 /* Define if you don't have vprintf but do have _doprnt.  */
 #undef HAVE_DOPRNT
 
+/* Define if you have the dprintf function.  */
+#undef HAVE_DPRINTF
+
 /* Define if you have the dup2 function.  */
 #undef HAVE_DUP2
 
 /* Define if you have the eaccess function.  */
 #undef HAVE_EACCESS
 
+/* Define if you have the faccessat function.  */
+#undef HAVE_FACCESSAT
+
 /* Define if you have the fcntl function.  */
 #undef HAVE_FCNTL
 
-/* Define if you have the fdprintf function. */
-#undef HAVE_FDPRINTF
+/* Define if you have the fnmatch function.  */
+#undef HAVE_FNMATCH
+
+/* Can fnmatch be used as a fallback to match [=equiv=] with collation weights? */
+#undef FNMATCH_EQUIV_FALLBACK
 
 /* Define if you have the fpurge/__fpurge function.  */
 #undef HAVE_FPURGE
@@ -568,6 +623,9 @@
 
 /* Define if you have the getcwd function.  */
 #undef HAVE_GETCWD
+
+/* Define if you have the getentropy function.  */
+#undef HAVE_GETENTROPY
 
 /* Define if you have the getdtablesize function.  */
 #undef HAVE_GETDTABLESIZE
@@ -596,6 +654,9 @@
 /* Define if you have the getpwuid function. */
 #undef HAVE_GETPWUID
 
+/* Define if you have the getrandom function.  */
+#undef HAVE_GETRANDOM
+
 /* Define if you have the getrlimit function.  */
 #undef HAVE_GETRLIMIT
 
@@ -617,6 +678,9 @@
 /* Define if you have the iconv function.  */
 #undef HAVE_ICONV
 
+/* Define if you have the imaxdiv function.  */
+#undef HAVE_IMAXDIV
+
 /* Define if you have the inet_aton function.  */
 #undef HAVE_INET_ATON
 
@@ -628,12 +692,6 @@
 
 /* Define if you have the isgraph function.  */
 #undef HAVE_ISGRAPH
-
-/* Define if you have the isinf function in libc */
-#undef HAVE_ISINF_IN_LIBC
-
-/* Define if you have the isnan function in libc */
-#undef HAVE_ISNAN_IN_LIBC
 
 /* Define if you have the isprint function.  */
 #undef HAVE_ISPRINT
@@ -680,6 +738,9 @@
 /* Define if you have the mbscmp function. */
 #undef HAVE_MBSCMP
 
+/* Define if you have the mbsnrtowcs function. */
+#undef HAVE_MBSNRTOWCS
+
 /* Define if you have the mbsrtowcs function. */
 #undef HAVE_MBSRTOWCS
 
@@ -689,17 +750,29 @@
 /* Define if you have the memset function.  */
 #undef HAVE_MEMSET
 
+/* Define if you have the mkdtemp function.  */
+#undef HAVE_MKDTEMP
+
 /* Define if you have the mkfifo function.  */
 #undef HAVE_MKFIFO
 
+/* Define if you have the mkstemp function.  */
+#undef HAVE_MKSTEMP
+
 /* Define if you have the pathconf function. */
 #undef HAVE_PATHCONF
+
+/* Define if you have the pselect function.  */
+#undef HAVE_PSELECT
 
 /* Define if you have the putenv function.  */
 #undef HAVE_PUTENV
 
 /* Define if you have the raise function. */
 #undef HAVE_RAISE
+
+/* Define if you have the random function. */
+#undef HAVE_RANDOM
 
 /* Define if you have the readlink function. */
 #undef HAVE_READLINK
@@ -741,6 +814,14 @@
 #undef HAVE_SETREGID
 #undef HAVE_DECL_SETREGID
 
+/* Define if you have the setregid function.  */
+#undef HAVE_SETRESGID
+#undef HAVE_DECL_SETRESGID
+
+/* Define if you have the setresuid function.  */
+#undef HAVE_SETRESUID
+#undef HAVE_DECL_SETRESUID
+
 /* Define if you have the setvbuf function.  */
 #undef HAVE_SETVBUF
 
@@ -761,6 +842,9 @@
 
 /* Define if you have the strchr function.  */
 #undef HAVE_STRCHR
+
+/* Define if you have the strchrnul function.  */
+#undef HAVE_STRCHRNUL
 
 /* Define if you have the strcoll function.  */
 #undef HAVE_STRCOLL
@@ -867,8 +951,14 @@
 /* Define if you have the wctype function.  */
 #undef HAVE_WCTYPE
 
+/* Define if you have the wcswidth function.  */
+#undef HAVE_WCSWIDTH
+
 /* Define if you have the wcwidth function.  */
 #undef HAVE_WCWIDTH
+
+/* and if it works */
+#undef WCWIDTH_BROKEN
 
 /* Presence of certain system include files. */
 
@@ -890,6 +980,9 @@
 /* Define if you have the <langinfo.h> header file.  */
 #undef HAVE_LANGINFO_H
 
+/* Define if you have the <libaudit.h> header file. */
+#undef HAVE_LIBAUDIT_H
+
 /* Define if you have the <libintl.h> header file. */
 #undef HAVE_LIBINTL_H
 
@@ -898,6 +991,9 @@
 
 /* Define if you have the <locale.h> header file.  */
 #undef HAVE_LOCALE_H
+
+/* Define if you have the <mbstr.h> header file.  */
+#undef HAVE_MBSTR_H
 
 /* Define if you have the <ndir.h> header file.  */
 #undef HAVE_NDIR_H
@@ -929,6 +1025,9 @@
 /* Define if you have the <memory.h> header file.  */
 #undef HAVE_MEMORY_H
 
+/* Define if you have the <stdbool.h> header file. */
+#undef HAVE_STDBOOL_H
+
 /* Define if you have the <stddef.h> header file. */
 #undef HAVE_STDDEF_H
 
@@ -944,6 +1043,12 @@
 /* Define if you have the <sys/file.h> header file.  */
 #undef HAVE_SYS_FILE_H
 
+/* Define if you have the <sys/ioctl.h> header file.  */
+#undef HAVE_SYS_IOCTL_H
+
+/* Define if you have the <sys/mman.h> header file.  */
+#undef HAVE_SYS_MMAN_H
+
 /* Define if you have the <sys/ndir.h> header file.  */
 #undef HAVE_SYS_NDIR_H
 
@@ -955,6 +1060,9 @@
 
 /* Define if you have the <sys/ptem.h> header file.  */
 #undef HAVE_SYS_PTEM_H
+
+/* Define if you have the <sys/random.h> header file.  */
+#undef HAVE_SYS_RANDOM_H
 
 /* Define if you have the <sys/resource.h> header file.  */
 #undef HAVE_SYS_RESOURCE_H
@@ -974,8 +1082,6 @@
 /* Define if you have <sys/time.h> */
 #undef HAVE_SYS_TIME_H
 
-#undef TIME_WITH_SYS_TIME
-
 /* Define if you have <sys/times.h> */
 #undef HAVE_SYS_TIMES_H
 
@@ -993,6 +1099,9 @@
 
 /* Define if you have the <termios.h> header file.  */
 #undef HAVE_TERMIOS_H
+
+/* Define if you have the <ulimit.h> header file.  */
+#undef HAVE_ULIMIT_H
 
 /* Define if you have the <unistd.h> header file.  */
 #undef HAVE_UNISTD_H
@@ -1014,9 +1123,8 @@
 
 #undef HAVE_LIBSOCKET
 
-
-/* Define if on MINIX.  */
-#undef _MINIX
+/* Are we running the GNU C library, version 2.1 or later? */
+#undef GLIBC21
 
 /* Are we running SVR5 (UnixWare 7)? */
 #undef SVR5
@@ -1046,6 +1154,15 @@
 #undef DUP2_BROKEN
 
 #undef GETCWD_BROKEN
+
+#undef DEV_FD_STAT_BROKEN
+
+/* An array implementation that prioritizes speed (O(1) access) over space,
+   in array2.c */
+#undef ALT_ARRAY_IMPLEMENTATION
+
+/* Support for $"..." translatable strings. */
+#undef TRANSLATABLE_STRINGS
 
 /* Additional defines for configuring lib/intl, maintained by autoscan/autoheader */
 
@@ -1078,6 +1195,9 @@
 
 /* Define if you have a working `mmap' system call. */
 #undef HAVE_MMAP
+
+/* Define if you have the `mremap' function. */
+#undef HAVE_MREMAP
 
 /* Define if you have the `munmap' function. */
 #undef HAVE_MUNMAP

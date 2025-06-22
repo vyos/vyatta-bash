@@ -6,25 +6,47 @@
 unexport LANG LC_ALL LC_CTYPE LC_COLLATE LC_TIME LC_NUMERIC LC_MESSAGES
 
 # architecture dependent variables
-DEB_BUILD_GNU_TYPE	:= $(shell dpkg-architecture -qDEB_BUILD_GNU_TYPE)
-DEB_HOST_ARCH		:= $(shell dpkg-architecture -qDEB_HOST_ARCH)
-DEB_HOST_ARCH_OS	:= $(shell dpkg-architecture -qDEB_HOST_ARCH_OS)
-DEB_HOST_GNU_CPU	:= $(shell dpkg-architecture -qDEB_HOST_GNU_CPU)
-DEB_HOST_GNU_SYSTEM	:= $(shell dpkg-architecture -qDEB_HOST_GNU_SYSTEM)
-DEB_HOST_GNU_TYPE	:= $(shell dpkg-architecture -qDEB_HOST_GNU_TYPE)
+vafilt = $(subst $(2)=,,$(filter $(2)=%,$(1)))
+DPKG_VARS := $(shell dpkg-architecture)
+DEB_BUILD_GNU_TYPE	?= $(call vafilt,$(DPKG_VARS),DEB_BUILD_GNU_TYPE)
+DEB_HOST_ARCH		?= $(call vafilt,$(DPKG_VARS),DEB_HOST_ARCH)
+DEB_HOST_ARCH_OS	?= $(call vafilt,$(DPKG_VARS),DEB_HOST_ARCH_OS)
+DEB_HOST_GNU_CPU	?= $(call vafilt,$(DPKG_VARS),DEB_HOST_GNU_CPU)
+DEB_HOST_GNU_SYSTEM	?= $(call vafilt,$(DPKG_VARS),DEB_HOST_GNU_SYSTEM)
+DEB_HOST_GNU_TYPE	?= $(call vafilt,$(DPKG_VARS),DEB_HOST_GNU_TYPE)
+DEB_HOST_MULTIARCH	?= $(call vafilt,$(DPKG_VARS),DEB_HOST_MULTIARCH)
 
-VERSION		:= 3.3
+VERSION		:= 4.2
 #PKGVERSION	:= $(shell dpkg-parsechangelog \
 #			| sed -n '/Version:/s/\(.* \)\(.*\)-2\(.*\)/\2\3/p')
 #PKGVERSION	:= 3.0
 #dpkg_ctrl_args := -v$(PKGVERSION) -VBinary-Version=$(PKGVERSION)
 
+with_gfdl	= yes
 
-with_gfdl	= no
+ifneq ($(DEB_HOST_GNU_TYPE),$(DEB_BUILD_GNU_TYPE))
+  CC	= $(DEB_HOST_GNU_TYPE)-gcc
+else
+  CC	= gcc
+endif
 
-CC	= gcc
-CFLAGS	= -g -O2 -Wall
-SHELL	= bash
+ifneq (,$(findstring nostrip,$(DEB_BUILD_OPTIONS)))
+  STRIP = :
+else
+  ifneq ($(DEB_HOST_GNU_TYPE),$(DEB_BUILD_GNU_TYPE))
+    STRIP = $(DEB_HOST_GNU_TYPE)-strip
+  else
+    STRIP = strip
+  endif
+endif
+
+
+dpkg_buildflags = DEB_BUILD_MAINT_OPTIONS="hardening=+all" DEB_CFLAGS_MAINT_APPEND="-Wall" dpkg-buildflags
+CFLAGS := $(shell $(dpkg_buildflags) --get CFLAGS)
+CPPFLAGS := $(shell $(dpkg_buildflags) --get CPPFLAGS)
+LDFLAGS := $(shell $(dpkg_buildflags) --get LDFLAGS)
+
+SHELL	= /bin/bash
 YACC	= bison -y
 
 IX	= install -o 0 -g 0
@@ -35,59 +57,71 @@ with_installed_rl = no
 
 debflags =
 
-PWD	:= $(shell pwd)
 p	= vyatta-bash
 
 d	= debian/$(p)
 
+termcap_lib := $(if $(wildcard /usr/lib/libtinfo.so /usr/lib/$(DEB_HOST_MULTIARCH)/libtinfo.so), \
+		 -ltinfo, \
+		 -lncurses)
+
 conf_args = \
-	--with-curses \
-	--disable-net-redirections \
 	--enable-largefile \
 	--prefix=/usr \
 	--infodir=/usr/share/info \
-	--mandir=/usr/share/man
+	--mandir=/usr/share/man \
+	--without-bash-malloc
 ifeq ($(with_installed_rl),yes)
     conf_args += --with-installed-readline
 endif
+ifeq ($(DEB_BUILD_GNU_TYPE), $(DEB_HOST_GNU_TYPE))
+    conf_args += --build $(DEB_HOST_GNU_TYPE)
+else
+    conf_args += --build $(DEB_BUILD_GNU_TYPE) --host $(DEB_HOST_GNU_TYPE)
+endif
 
-conf_args += --host=$(DEB_HOST_GNU_TYPE)
+#build: bash-build static-build check
+build: stamps/before-build bash-build check
+build-arch: build
+build-indep: build
 
-build: before-build bash-build
-
-before-build:
+stamps/before-build:
+	dh_testdir
+#	dh_update_autotools_config
+	dh_autotools-dev_updateconfig
+	mkdir -p stamps
 	: # see #327477, needed to have HAVE_DEV_STDIN defined
 	(test -d /dev/fd && test -r /dev/stdin < /dev/null) \
 	  || (test -d /proc/self/fd && test -r /dev/stdin < /dev/null)
 ifneq (,$(findstring $(DEB_HOST_ARCH_OS), linux freebsd))
-	$(CC) $(CFLAGS) -o clear_console debian/clear_console.c -lncurses
+	$(CC) $(CFLAGS) $(LDFLAGS) $(CPPFLAGS) -o clear_console \
+	    debian/clear_console.c $(termcap_lib)
 endif
+	touch $@
 
 # ---------------------------------------------------------------------------
 # build standard bash
 
 bash-build:
 	$(MAKE) -f debian/rules do-build-bash \
-	    bash_src=bash \
-	    bash_patches="$(debian_patches)" \
+	    bash_src=. \
 	    build=bash \
 	    configure_args="$(conf_args)"
-bash-configure:
+bash-configure: stamps/before-build
 	$(MAKE) -f debian/rules do-configure-bash \
-	    bash_src=bash \
-	    bash_patches="$(debian_patches)" \
+	    bash_src=. \
 	    build=bash \
 	    configure_args="$(conf_args)"
-
-# ---------------------------------------------------------------------------
 
 check: stamps/stamp-check
 stamps/stamp-check: bash-build
 	@echo BEGIN test
 ifeq ($(DEB_BUILD_GNU_TYPE),$(DEB_HOST_GNU_TYPE))
+  ifeq (,$(findstring nocheck, $(DEB_BUILD_OPTIONS)))
 	-sh debian/locale-gen
-	LOCPATH=$(PWD)/locales \
-		$(MAKE) -C build-bash test 2>&1 | tee build-bash/test-protocol
+	LOCPATH=$(CURDIR)/locales \
+		time $(MAKE) -C build-bash test 2>&1 | tee build-bash/test-protocol
+  endif
 else
 	@echo Suppress 'make' test, because this is cross build
 endif
@@ -99,46 +133,52 @@ endif
 clean:
 	dh_testdir
 	dh_testroot
-	rm -rf stamps build-* bash bashdb
+	rm -rf stamps build-*
 	rm -f debian/README.Debian
 	rm -rf locales
 	rm -f clear_console
+	rm -fr doc/bash.info doc/bash.pdf doc/bash.html doc/bashref.info doc/bashref.pdf doc/bashref.html
+	dh_autotools-dev_restoreconfig
 	dh_clean
 
 # ---------------------------------------------------------------------------
 
+
 install: bash-install
 
 bash-install: bash-build stamps/stamp-install-bash
-stamps/stamp-install-bash: stamps/stamp-build-bash
+stamps/stamp-install-bash: stamps/before-build stamps/stamp-build-bash
 	dh_testdir
 	dh_testroot
-	dh_clean -k -p$(p)
+	dh_prep -p$(p)
 	dh_installdirs -p$(p) \
 		bin
 
 	: # install it
 	$(MAKE) -C build-bash install \
-		CC='$(CC)' \
-		CFLAGS='$(CFLAGS)' \
 		YACC="$(YACC)" \
-		DESTDIR=$(PWD)/$(d)
+		DESTDIR=$(CURDIR)/$(d)
+
 	mv $(d)/usr/bin/vbash $(d)/bin/.
 	rmdir $(d)/usr/bin
 
+	: # /etc/shells integration
+	$(ID) -D debian/shells.d/bash $(d)/usr/share/debianutils/shells.d/vbash
+
+#	cat debian/README stamps/stamp-patch > debian/README.Debian
 	cat debian/README > debian/README.Debian
 
 	touch stamps/stamp-install-bash
 
 binary-bash: bash-install
-	rm -f debian/files
 	dh_testdir
 	dh_testroot
-	dh_installchangelogs -p$(p) bash/CWRU/changelog
+	dh_installchangelogs -p$(p)
 	dh_installdocs -p$(p) \
-		bash/{CHANGES,NEWS,COMPAT,doc/INTRO,POSIX} \
+		CHANGES NEWS COMPAT doc/INTRO POSIX \
 		debian/{README.Debian,README.abs-guide,README.commands} \
 		debian/inputrc.arrows
+	dh_installmenu -p$(p)
 	dh_strip -p$(p)
 	dh_compress -p$(p)
 	dh_fixperms -p$(p)
@@ -161,21 +201,48 @@ binary:	binary-arch
 do-build-$(build): stamps/stamp-build-$(build)
 stamps/stamp-build-$(build): stamps/stamp-configure-$(build)
 	dh_testdir
+ifneq (,$(profiled_build))
 	$(MAKE) -C build-$(build) \
-		CC='$(CC)' \
-		CFLAGS='$(CFLAGS)' \
+		CFLAGS='$(CFLAGS) -fprofile-generate' \
 		YACC="$(YACC)" \
+		TERMCAP_LIB="$(termcap_lib)" \
 		deb_builddir=build-$(build)/ \
 		$(debflags)
+	-sh debian/locale-gen
+	cp debian/run-my-gprof bash/tests/
+	LOCPATH=$(CURDIR)/locales \
+	    time $(MAKE) -C build-$(build) TESTSCRIPT=run-my-gprof test 2>&1 \
+		| tee build-bash/profile-protocol
+	$(MAKE) -C build-$(build) clean
+	rm -f build-$(build)/lib/malloc/malloc*.gc??
+	$(MAKE) -C build-$(build) \
+		CFLAGS='$(CFLAGS) -fprofile-use' \
+		YACC="$(YACC)" \
+		TERMCAP_LIB="$(termcap_lib)" \
+		deb_builddir=build-$(build)/ \
+		$(debflags)
+else
+	$(MAKE) -C build-$(build) \
+		YACC="$(YACC)" \
+		TERMCAP_LIB="$(termcap_lib)" \
+		deb_builddir=build-$(build)/ \
+		$(debflags)
+endif
+ifeq ($(with_gfdl),yes)
+	$(MAKE) -C build-$(build)/doc \
+		bash.info
+endif
 	touch stamps/stamp-build-$(build)
 
 do-configure-$(build): stamps/stamp-configure-$(build)
-stamps/stamp-configure-$(build): stamps/stamp-unpack-$(bash_src)
+stamps/stamp-configure-$(build): stamps/before-build
 	dh_testdir
 	rm -rf build-$(build)
 	mkdir build-$(build)
 	cd build-$(build) && \
-	    CC="$(CC)" CFLAGS="$(CFLAGS)" YACC="$(YACC)" \
+	    CC="$(CC)" \
+	    CFLAGS="$(CFLAGS)" CPPFLAGS="$(CPPFLAGS)" LDFLAGS="$(LDFLAGS)" \
+	    YACC="$(YACC)" \
 		../$(bash_src)/configure $(configure_args)
 	if ! grep -q '#define HAVE_DEV_STDIN 1' build-$(build)/config.h; then \
 	  echo "HAVE_DEV_STDIN not defined, abortig build"; \
@@ -183,24 +250,37 @@ stamps/stamp-configure-$(build): stamps/stamp-unpack-$(bash_src)
 	fi
 	touch stamps/stamp-configure-$(build)
 
-unpack-$(bash_src): stamps/stamp-unpack-$(bash_src)
-stamps/stamp-unpack-$(bash_src):
-	mkdir -p stamps
-	rm -rf bash-$(VERSION) $(bash_src)
-	rm -f stamps/stamp-patch-$(bash_src){,-*}
-	tar c --exclude='bash-src.tar' --exclude='debian' --exclude='.git' \
-	      --exclude='stamps' --exclude='bash' --exclude='build-bash' \
-	      --exclude='build-min' --exclude='build-static' \
-	      -f bash-src.tar .
-	mkdir -p $(bash_src)
-	tar x -C $(bash_src) -f bash-src.tar
-	rm -f bash-src.tar
-	cp -p /usr/share/misc/config.* $(bash_src)/.
-	cp -p /usr/share/misc/config.* $(bash_src)/support/.
-	touch stamps/stamp-unpack-$(bash_src)
+update-patches:
+	export QUILT_PATCHES=$(patchdir); \
+	export QUILT_REFRESH_ARGS="--no-timestamps --no-index -p ab"; \
+	export QUILT_DIFF_ARGS="--no-timestamps --no-index -p ab"; \
+	while quilt push; do quilt refresh; done
 
-.PHONY: unpack patch binary binary-arch clean build bash-build \
-    check bash-configure binary-bash install bash-install
+#unpack-$(bash_src): stamps/stamp-unpack-$(bash_src)
+#stamps/stamp-unpack-$(bash_src):
+#	mkdir -p stamps
+#	rm -rf bash-$(VERSION) $(bash_src)
+#	rm -f stamps/stamp-patch-$(bash_src){,-*}
+#	tar xf bash-$(VERSION)*.tar.xz
+#	mv bash-$(VERSION) $(bash_src)
+#	rm -f bash/y.tab.?
+#	cp -p /usr/share/misc/config.* $(bash_src)/.
+#	cp -p /usr/share/misc/config.* $(bash_src)/support/.
+#	touch stamps/stamp-unpack-$(bash_src)
+
+remove-non-dfsg-files:
+	rm -f doc/article.*
+	rm -f doc/FAQ
+	rm -f doc/aosa-bash*.pdf
+	rm -f doc/rose94.*
+
+.NOTPARALLEL: build
+.PHONY: unpack binary binary-arch clean \
+    build bash-build \
+    check \
+    bash-configure \
+    binary-bash \
+    install bash-install
 
 # Local Variables:
 # mode: makefile

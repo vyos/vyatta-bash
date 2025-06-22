@@ -5,9 +5,9 @@ trap -- 'echo aborting' SIGINT
 trap -- 'echo aborting' SIGQUIT
 trap -- 'echo aborting' SIGABRT
 trap -- 'echo aborting' SIGTERM
-[20] debug
+[33] debug
 debug line
-[22] debug
+[35] debug
 trap -- 'echo exiting' EXIT
 trap -- 'echo aborting' SIGHUP
 trap -- 'echo aborting' SIGINT
@@ -15,25 +15,25 @@ trap -- 'echo aborting' SIGQUIT
 trap -- 'echo aborting' SIGABRT
 trap -- 'echo aborting' SIGTERM
 trap -- 'echo [$LINENO] debug' DEBUG
-[24] debug
-func[16] funcdebug
+[37] debug
+func[29] funcdebug
 funcdebug line
-[26] debug
+./trap.tests[39] funcdebug
 trap -- 'echo exiting' EXIT
 trap -- 'echo aborting' SIGHUP
 trap -- 'echo aborting' SIGINT
 trap -- 'echo aborting' SIGQUIT
 trap -- 'echo aborting' SIGABRT
 trap -- 'echo aborting' SIGTERM
-trap -- 'echo [$LINENO] debug' DEBUG
-[28] debug
-./trap.tests[33] debug
-./trap.tests[34] debug
-func2[30] debug
-func2[31] debug
+trap -- 'echo ${FUNCNAME:-$0}[$LINENO] funcdebug' DEBUG
+./trap.tests[41] funcdebug
+./trap.tests[46] debug
+./trap.tests[47] debug
+func2[43] debug
+func2[44] debug
 func2debug line
-./trap.tests[36] debug
-./trap.tests[38] debug
+./trap.tests[49] debug
+./trap.tests[51] debug
 trap -- 'echo exiting' EXIT
 trap -- 'echo aborting' SIGHUP
 trap -- 'echo aborting' SIGINT
@@ -53,6 +53,7 @@ trap -- 'echo aborting' SIGQUIT
 trap -- 'echo aborting' SIGABRT
 trap -- 'echo aborting' SIGTERM
 0
+trap -- '' SIGUSR2
 ERRTRAP
 ERRTRAP
 ERRTRAP
@@ -63,17 +64,47 @@ after while
 before false in trap2a.sub
 after false in trap2a.sub
 command substitution
+ERRTRAP
+ERRTRAP
+bar
+ERRTRAP
+ERRTRAP
+ERRTRAP
+ERRTRAP
+ERRTRAP
 +[6] echo 1
 1
 +[7] echo 2
 2
-+[8] echo 3
-+[8] cat
++[8] false
++[8] false
 +[8] false
 ++[8] echo trap: 8
 trap: 8
 +[9] echo 4
 4
+exit subshell 1
+current shell
+exit subshell 2
+current shell
+current shell
+current shell
+outside 1
+outside 2
+outside 3
+outside 4
+sleep 2
+wait $!
+exit
+in trap EXIT
+sleep 2
+wait $!
+exit
+in trap EXIT
+fn
+after 1
+fn
+after 2
 caught a child death
 caught a child death
 caught a child death
@@ -81,5 +112,4 @@ trap -- 'echo caught a child death' SIGCHLD
 trap -- 'echo exiting' EXIT
 trap -- 'echo aborting' SIGABRT
 trap -- 'echo caught a child death' SIGCHLD
-trap -- '' SIGUSR2
 exiting

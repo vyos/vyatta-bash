@@ -40,19 +40,26 @@ Copyright (C) 1999 Jeff Solomon
 #include <config.h>
 #endif
 
-#include <stdio.h>
 #include <sys/types.h>
 
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
+#include <stdlib.h>
 
+#include <stdio.h>
 #include <termios.h>	/* xxx - should make this more general */
+
+#include <locale.h>
 
 #ifdef READLINE_LIBRARY
 #  include "readline.h"
 #else
 #  include <readline/readline.h>
+#endif
+
+#ifndef STDIN_FILENO
+#  define STDIN_FILENO 0
 #endif
 
 /* This little examples demonstrates the alternate interface to using readline.
@@ -98,6 +105,8 @@ int
 main()
 {
     fd_set fds;
+
+    setlocale (LC_ALL, "");
 
     /* Adjust the terminal slightly before the handler is installed. Disable
      * canonical mode processing and set the input character time flag to be

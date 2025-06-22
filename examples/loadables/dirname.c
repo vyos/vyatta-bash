@@ -30,21 +30,24 @@
 #include "builtins.h"
 #include "shell.h"
 #include "common.h"
+#include "bashgetopt.h"
 
+int
 dirname_builtin (list)
      WORD_LIST *list;
 {
   int slen;
   char *string;
 
+  if (no_options (list))
+    return (EX_USAGE);
+  list = loptend;
+
   if (list == 0 || list->next)
     {
       builtin_usage ();
       return (EX_USAGE);
     }
-
-  if (no_options (list))
-    return (EX_USAGE);
 
   string = list->word->word;
   slen = strlen (string);

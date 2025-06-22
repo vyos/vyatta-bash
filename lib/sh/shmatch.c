@@ -2,7 +2,7 @@
  * shmatch.c -- shell interface to posix regular expression matching.
  */
 
-/* Copyright (C) 2003 Free Software Foundation, Inc.
+/* Copyright (C) 2003-2022 Free Software Foundation, Inc.
 
    This file is part of GNU Bash, the Bourne Again SHell.
 
@@ -41,6 +41,10 @@
 
 extern int glob_ignore_case, match_ignore_case;
 
+#if defined (ARRAY_VARS)
+extern SHELL_VAR *builtin_find_indexed_array (char *, int);
+#endif
+
 int
 sh_regmatch (string, pattern, flags)
      const char *string;
@@ -62,9 +66,9 @@ sh_regmatch (string, pattern, flags)
 #if defined (ARRAY_VARS)
   rematch = (SHELL_VAR *)NULL;
 #endif
-  
+
   rflags = REG_EXTENDED;
-  if (glob_ignore_case || match_ignore_case)
+  if (match_ignore_case)
     rflags |= REG_ICASE;
 #if !defined (ARRAY_VARS)
   rflags |= REG_NOSUB;
@@ -79,7 +83,8 @@ sh_regmatch (string, pattern, flags)
   matches = NULL;
 #endif
 
-  if (regexec (&regex, string, regex.re_nsub + 1, matches, 0))
+  /* man regexec: NULL PMATCH ignored if NMATCH == 0 */
+  if (regexec (&regex, string, matches ? regex.re_nsub + 1 : 0, matches, 0))
     result = EXECUTION_FAILURE;
   else
     result = EXECUTION_SUCCESS;		/* match */
@@ -91,11 +96,16 @@ sh_regmatch (string, pattern, flags)
   /* Store the parenthesized subexpressions in the array BASH_REMATCH.
      Element 0 is the portion that matched the entire regexp.  Element 1
      is the part that matched the first subexpression, and so on. */
-  unbind_variable ("BASH_REMATCH");
+#if 1
+  unbind_global_variable_noref ("BASH_REMATCH");
   rematch = make_new_array_variable ("BASH_REMATCH");
-  amatch = array_cell (rematch);
+#else
+  /* TAG:bash-5.3 */
+  rematch = builtin_find_indexed_array ("BASH_REMATCH", 1);
+#endif
+  amatch = rematch ? array_cell (rematch) : (ARRAY *)0;
 
-  if ((flags & SHMAT_SUBEXP) && result == EXECUTION_SUCCESS && subexp_str)
+  if (matches && amatch && (flags & SHMAT_SUBEXP) && result == EXECUTION_SUCCESS && subexp_str)
     {
       for (subexp_ind = 0; subexp_ind <= regex.re_nsub; subexp_ind++)
 	{
@@ -106,7 +116,9 @@ sh_regmatch (string, pattern, flags)
 	}
     }
 
+#if 0
   VSETATTR (rematch, att_readonly);
+#endif
 
   free (subexp_str);
   free (matches);

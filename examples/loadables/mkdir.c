@@ -52,12 +52,12 @@ int
 mkdir_builtin (list)
      WORD_LIST *list;
 {
-  int opt, pflag, omode, rval, octal, nmode, parent_mode, um;
+  int opt, pflag, mflag, omode, rval, nmode, parent_mode;
   char *mode;
   WORD_LIST *l;
 
   reset_internal_getopt ();
-  pflag = 0;
+  pflag = mflag = 0;
   mode = (char *)NULL;
   while ((opt = internal_getopt(list, "m:p")) != -1)
     switch (opt)
@@ -66,8 +66,10 @@ mkdir_builtin (list)
 	  pflag = 1;
 	  break;
 	case 'm':
+	  mflag = 1;
 	  mode = list_optarg;
 	  break;
+	CASE_HELPOPT;
 	default:
 	  builtin_usage();
 	  return (EX_USAGE);
@@ -90,9 +92,8 @@ mkdir_builtin (list)
 	  builtin_error ("invalid file mode: %s", mode);
 	  return (EXECUTION_FAILURE);
 	}
-      octal = 1;
     }
-  else if (mode)
+  else 				/* symbolic mode */
     {
       /* initial bits are a=rwx; the mode argument modifies them */
       omode = parse_symbolic_mode (mode, S_IRWXU | S_IRWXG | S_IRWXO);
@@ -101,7 +102,6 @@ mkdir_builtin (list)
 	  builtin_error ("invalid file mode: %s", mode);
 	  return (EXECUTION_FAILURE);
 	}
-      octal = 0;
     }
 
   /* Make the new mode */
@@ -109,14 +109,14 @@ mkdir_builtin (list)
   umask (original_umask);
 
   nmode = (S_IRWXU | S_IRWXG | S_IRWXO) & ~original_umask;
-  parent_mode = nmode | (S_IWRITE|S_IEXEC);	/* u+wx */
+  parent_mode = nmode | (S_IWUSR|S_IXUSR);	/* u+wx */
 
   /* Adjust new mode based on mode argument */
   nmode &= omode;
 
   for (rval = EXECUTION_SUCCESS, l = list; l; l = l->next)
     {
-      if (pflag && make_path (l->word->word, nmode, parent_mode))
+      if (pflag && make_path (l->word->word, mflag, nmode, parent_mode))
 	{
 	  rval = EXECUTION_FAILURE;
 	  continue;
@@ -134,8 +134,9 @@ mkdir_builtin (list)
    this changes the process's umask; make sure that all paths leading to a
    return reset it to ORIGINAL_UMASK */
 static int
-make_path (path, nmode, parent_mode)
+make_path (path, user_mode, nmode, parent_mode)
      char *path;
+     int user_mode;
      int nmode, parent_mode;
 {
   int oumask;
@@ -150,7 +151,7 @@ make_path (path, nmode, parent_mode)
 	  return 1;
 	}
 	
-      if (chmod (path, nmode))
+      if (user_mode && chmod (path, nmode))
         {
           builtin_error ("%s: %s", path, strerror (errno));
           return 1;
@@ -174,9 +175,16 @@ make_path (path, nmode, parent_mode)
       *p = '\0';
       if (stat (npath, &sb) != 0)
 	{
-	  if (mkdir (npath, parent_mode))
+	  if (mkdir (npath, 0))
 	    {
 	      builtin_error ("cannot create directory `%s': %s", npath, strerror (errno));
+	      umask (original_umask);
+	      free (npath);
+	      return 1;
+	    }
+	  if (chmod (npath, parent_mode) != 0)
+	    {
+	      builtin_error ("cannot chmod directory `%s': %s", npath, strerror (errno));
 	      umask (original_umask);
 	      free (npath);
 	      return 1;
@@ -220,7 +228,7 @@ char *mkdir_doc[] = {
 	"a symbolic mode is used, the operations are interpreted relative to",
 	"an initial mode of \"a=rwx\".  The -p option causes any required",
 	"intermediate directories in PATH to be created.  The directories",
-	"are created with permssion bits of rwxrwxrwx as modified by the current",
+	"are created with permission bits of rwxrwxrwx as modified by the current",
 	"umask, plus write and search permissions for the owner.  mkdir",
 	"returns 0 if the directories are created successfully, and non-zero",
 	"if an error occurs.",

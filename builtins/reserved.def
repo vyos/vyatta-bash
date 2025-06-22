@@ -2,7 +2,7 @@ This file is reserved.def, in which the shell reserved words are defined.
 It has no direct C file production, but defines builtins for the Bash
 builtin help command.
 
-Copyright (C) 1987-2009 Free Software Foundation, Inc.
+Copyright (C) 1987-2019 Free Software Foundation, Inc.
 
 This file is part of GNU Bash, the Bourne Again SHell.
 
@@ -114,22 +114,22 @@ Returns the status of the last command executed.
 $END
 
 $BUILTIN while
-$SHORT_DOC while COMMANDS; do COMMANDS; done
+$SHORT_DOC while COMMANDS; do COMMANDS-2; done
 Execute commands as long as a test succeeds.
 
-Expand and execute COMMANDS as long as the final command in the
-`while' COMMANDS has an exit status of zero.
+Expand and execute COMMANDS-2 as long as the final command in COMMANDS has
+an exit status of zero.
 
 Exit Status:
 Returns the status of the last command executed.
 $END
 
 $BUILTIN until
-$SHORT_DOC until COMMANDS; do COMMANDS; done
+$SHORT_DOC until COMMANDS; do COMMANDS-2; done
 Execute commands as long as a test does not succeed.
 
-Expand and execute COMMANDS as long as the final command in the
-`until' COMMANDS has an exit status which is not zero.
+Expand and execute COMMANDS-2 as long as the final command in COMMANDS has
+an exit status which is not zero.
 
 Exit Status:
 Returns the status of the last command executed.
@@ -145,7 +145,7 @@ to indices 0 and 1 of an array variable NAME in the executing shell.
 The default NAME is "COPROC".
 
 Exit Status:
-Returns the exit status of COMMAND.
+The coproc command returns an exit status of 0.
 $END
 
 $BUILTIN function
@@ -194,7 +194,7 @@ $SHORT_DOC (( expression ))
 Evaluate arithmetic expression.
 
 The EXPRESSION is evaluated according to the rules for arithmetic
-evaluation.  Equivalent to "let EXPRESSION".
+evaluation.  Equivalent to `let "EXPRESSION"'.
 
 Exit Status:
 Returns 1 if EXPRESSION evaluates to 0; returns 0 otherwise.

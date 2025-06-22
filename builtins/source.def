@@ -1,7 +1,7 @@
 This file is source.def, from which is created source.c.
 It implements the builtins "." and  "source" in Bash.
 
-Copyright (C) 1987-2009 Free Software Foundation, Inc.
+Copyright (C) 1987-2020 Free Software Foundation, Inc.
 
 This file is part of GNU Bash, the Bourne Again SHell.
 
@@ -69,6 +69,7 @@ $END
 #include "../bashintl.h"
 
 #include "../shell.h"
+#include "../execute_cmd.h"
 #include "../flags.h"
 #include "../findcmd.h"
 #include "common.h"
@@ -79,9 +80,7 @@ $END
 extern int errno;
 #endif /* !errno */
 
-extern int posixly_correct;
-
-static void maybe_pop_dollar_vars __P((void));
+static void maybe_pop_dollar_vars PARAMS((void));
 
 /* If non-zero, `.' uses $PATH to look up the script to be sourced. */
 int source_uses_path = 1;
@@ -106,6 +105,7 @@ maybe_pop_dollar_vars ()
   if (debugging_mode)
     pop_args ();	/* restore BASH_ARGC and BASH_ARGV */
   set_dollar_vars_unchanged ();
+  invalidate_cached_quoted_dollar_at ();	/* just invalidate to be safe */
 }
 
 /* Read and execute commands from the file passed as argument.  Guess what.
@@ -117,7 +117,7 @@ source_builtin (list)
      WORD_LIST *list;
 {
   int result;
-  char *filename, *debug_trap;
+  char *filename, *debug_trap, *x;
 
   if (no_options (list))
     return (EX_USAGE);
@@ -150,7 +150,15 @@ source_builtin (list)
     {
       if (source_searches_cwd == 0)
 	{
-	  builtin_error (_("%s: file not found"), list->word->word);
+	  x = printable_filename (list->word->word, 0);
+	  builtin_error (_("%s: file not found"), x);
+	  if (x != list->word->word)
+	    free (x);
+	  if (posixly_correct && interactive_shell == 0 && executing_command_builtin == 0)
+	    {
+	      last_command_exit_value = EXECUTION_FAILURE;
+	      jump_to_top_level (EXITPROG);
+	    }
 	  return (EXECUTION_FAILURE);
 	}
       else
@@ -158,12 +166,14 @@ source_builtin (list)
     }
 
   begin_unwind_frame ("source");
-  add_unwind_protect ((Function *)xfree, filename);
+  add_unwind_protect (xfree, filename);
 
   if (list->next)
     {
       push_dollar_vars ();
       add_unwind_protect ((Function *)maybe_pop_dollar_vars, (char *)NULL);
+      if (debugging_mode || shell_compatibility_level <= 44)
+	init_bash_argv ();	/* Initialize BASH_ARGV and BASH_ARGC */
       remember_args (list->next, 1);
       if (debugging_mode)
 	push_args (list->next);	/* Update BASH_ARGV and BASH_ARGC */
@@ -178,7 +188,7 @@ source_builtin (list)
     {
       debug_trap = savestring (debug_trap);
       add_unwind_protect (xfree, debug_trap);
-      add_unwind_protect (set_debug_trap, debug_trap);
+      add_unwind_protect (maybe_set_debug_trap, debug_trap);
       restore_default_signal (DEBUG_TRAP);
     }
 

@@ -2,7 +2,7 @@
  * tmpfile.c - functions to create and safely open temp files for the shell.
  */
 
-/* Copyright (C) 2000 Free Software Foundation, Inc.
+/* Copyright (C) 2000-2020 Free Software Foundation, Inc.
 
    This file is part of GNU Bash, the Bourne Again SHell.
 
@@ -31,6 +31,8 @@
 #  include <unistd.h>
 #endif
 
+#include <bashansi.h>
+
 #include <stdio.h>
 #include <errno.h>
 
@@ -40,15 +42,20 @@
 extern int errno;
 #endif
 
-#define BASEOPENFLAGS	(O_CREAT | O_TRUNC | O_EXCL)
+#define BASEOPENFLAGS	(O_CREAT | O_TRUNC | O_EXCL | O_BINARY)
 
 #define DEFAULT_TMPDIR		"."	/* bogus default, should be changed */
 #define DEFAULT_NAMEROOT	"shtmp"
 
+/* Use ANSI-C rand() interface if random(3) is not available */
+#if !HAVE_RANDOM
+#define random() rand()
+#endif
+
 extern pid_t dollar_dollar_pid;
 
-static char *get_sys_tmpdir __P((void));
-static char *get_tmpdir __P((int));
+static char *get_sys_tmpdir PARAMS((void));
+static char *get_tmpdir PARAMS((int));
 
 static char *sys_tmpdir = (char *)NULL;
 static int ntmpfiles;
@@ -107,6 +114,23 @@ get_tmpdir (flags)
   return tdir;
 }
 
+static void
+sh_seedrand ()
+{
+#if HAVE_RANDOM
+  int d;
+  static int seeded = 0;
+  if (seeded == 0)
+    {
+      struct timeval tv;
+  	      
+      gettimeofday (&tv, NULL);
+      srandom (tv.tv_sec ^ tv.tv_usec ^ (getpid () << 16) ^ (uintptr_t)&d);
+      seeded = 1;
+    }
+#endif
+}
+
 char *
 sh_mktmpname (nameroot, flags)
      char *nameroot;
@@ -115,27 +139,37 @@ sh_mktmpname (nameroot, flags)
   char *filename, *tdir, *lroot;
   struct stat sb;
   int r, tdlen;
+  static int seeded = 0;
 
   filename = (char *)xmalloc (PATH_MAX + 1);
   tdir = get_tmpdir (flags);
   tdlen = strlen (tdir);
 
   lroot = nameroot ? nameroot : DEFAULT_NAMEROOT;
+  if (nameroot == 0)
+    flags &= ~MT_TEMPLATE;
+
+  if ((flags & MT_TEMPLATE) && strlen (nameroot) > PATH_MAX)
+    flags &= ~MT_TEMPLATE;
 
 #ifdef USE_MKTEMP
-  sprintf (filename, "%s/%s.XXXXXX", tdir, lroot);
+  if (flags & MT_TEMPLATE)
+    strcpy (filename, nameroot);
+  else
+    sprintf (filename, "%s/%s.XXXXXX", tdir, lroot);
   if (mktemp (filename) == 0)
     {
       free (filename);
       filename = NULL;
     }
 #else  /* !USE_MKTEMP */
+  sh_seedrand ();
   while (1)
     {
       filenum = (filenum << 1) ^
 		(unsigned long) time ((time_t *)0) ^
 		(unsigned long) dollar_dollar_pid ^
-		(unsigned long) ((flags & MT_USERANDOM) ? get_random_number () : ntmpfiles++);
+		(unsigned long) ((flags & MT_USERANDOM) ? random () : ntmpfiles++);
       sprintf (filename, "%s/%s-%lu", tdir, lroot, filenum);
       if (tmpnamelen > 0 && tmpnamelen < 32)
 	filename[tdlen + 1 + tmpnamelen] = '\0';
@@ -160,15 +194,23 @@ sh_mktmpfd (nameroot, flags, namep)
 {
   char *filename, *tdir, *lroot;
   int fd, tdlen;
-
+  
   filename = (char *)xmalloc (PATH_MAX + 1);
   tdir = get_tmpdir (flags);
   tdlen = strlen (tdir);
 
   lroot = nameroot ? nameroot : DEFAULT_NAMEROOT;
+  if (nameroot == 0)
+    flags &= ~MT_TEMPLATE;
+
+  if ((flags & MT_TEMPLATE) && strlen (nameroot) > PATH_MAX)
+    flags &= ~MT_TEMPLATE;
 
 #ifdef USE_MKSTEMP
-  sprintf (filename, "%s/%s.XXXXXX", tdir, lroot);
+  if (flags & MT_TEMPLATE)
+    strcpy (filename, nameroot);
+  else
+    sprintf (filename, "%s/%s.XXXXXX", tdir, lroot);
   fd = mkstemp (filename);
   if (fd < 0 || namep == 0)
     {
@@ -179,12 +221,13 @@ sh_mktmpfd (nameroot, flags, namep)
     *namep = filename;
   return fd;
 #else /* !USE_MKSTEMP */
+  sh_seedrand ();
   do
     {
       filenum = (filenum << 1) ^
 		(unsigned long) time ((time_t *)0) ^
 		(unsigned long) dollar_dollar_pid ^
-		(unsigned long) ((flags & MT_USERANDOM) ? get_random_number () : ntmpfiles++);
+		(unsigned long) ((flags & MT_USERANDOM) ? random () : ntmpfiles++);
       sprintf (filename, "%s/%s-%lu", tdir, lroot, filenum);
       if (tmpnamelen > 0 && tmpnamelen < 32)
 	filename[tdlen + 1 + tmpnamelen] = '\0';
@@ -217,4 +260,52 @@ sh_mktmpfp (nameroot, flags, namep)
   if (fp == 0)
     close (fd);
   return fp;
+}
+
+char *
+sh_mktmpdir (nameroot, flags)
+     char *nameroot;
+     int flags;
+{
+  char *filename, *tdir, *lroot, *dirname;
+  int fd, tdlen;
+  
+#ifdef USE_MKDTEMP
+  filename = (char *)xmalloc (PATH_MAX + 1);
+  tdir = get_tmpdir (flags);
+  tdlen = strlen (tdir);
+
+  lroot = nameroot ? nameroot : DEFAULT_NAMEROOT;
+  if (nameroot == 0)
+    flags &= ~MT_TEMPLATE;
+
+  if ((flags & MT_TEMPLATE) && strlen (nameroot) > PATH_MAX)
+    flags &= ~MT_TEMPLATE;
+
+  if (flags & MT_TEMPLATE)
+    strcpy (filename, nameroot);
+  else
+    sprintf (filename, "%s/%s.XXXXXX", tdir, lroot);
+  dirname = mkdtemp (filename);
+  if (dirname == 0)
+    {
+      free (filename);
+      filename = NULL;
+    }
+  return dirname;
+#else /* !USE_MKDTEMP */
+  filename = (char *)NULL;
+  do
+    {
+      filename = sh_mktmpname (nameroot, flags);
+      fd = mkdir (filename, 0700);
+      if (fd == 0)
+	break;
+      free (filename);
+      filename = (char *)NULL;
+    }
+  while (fd < 0 && errno == EEXIST);
+
+  return (filename);
+#endif /* !USE_MKDTEMP */
 }

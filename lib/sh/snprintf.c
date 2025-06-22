@@ -9,7 +9,7 @@
    Unix snprintf implementation.
    derived from inetutils/libinetutils/snprintf.c Version 1.1
 
-   Copyright (C) 2001,2006 Free Software Foundation, Inc.
+   Copyright (C) 2001-2020 Free Software Foundation, Inc.
 
    This file is part of GNU Bash, the Bourne Again SHell.
 
@@ -26,7 +26,7 @@
    You should have received a copy of the GNU General Public License
    along with Bash.  If not, see <http://www.gnu.org/licenses/>.
    
-   Revision History:
+   Original (pre-bash) Revision History:
 
    1.1:
       *  added changes from Miles Bader
@@ -50,7 +50,6 @@
  * Currently doesn't handle (and bash/readline doesn't use):
  *	* *M$ width, precision specifications
  *	* %N$ numbered argument conversions
- *	* inf, nan floating values imperfect (if isinf(), isnan() not in libc)
  *	* support for `F' is imperfect with ldfallback(), since underlying
  *	  printf may not handle it -- should ideally have another autoconf test
  */
@@ -71,7 +70,7 @@
 #endif
 
 #if defined(DRIVER) && !defined(HAVE_CONFIG_H)
-#define HAVE_LONG_LONG
+#define HAVE_LONG_LONG_INT
 #define HAVE_LONG_DOUBLE
 #ifdef __linux__
 #define HAVE_PRINTF_A_FORMAT
@@ -130,8 +129,8 @@
 #  define FL_ADDBASE    0x02    /* add base# prefix to converted value */
 #  define FL_HEXUPPER   0x04    /* use uppercase when converting to hex */
 #  define FL_UNSIGNED   0x08    /* don't add any sign */
-extern char *fmtulong __P((unsigned long int, int, char *, size_t, int));
-extern char *fmtullong __P((unsigned long long int, int, char *, size_t, int));
+extern char *fmtulong PARAMS((unsigned long int, int, char *, size_t, int));
+extern char *fmtullong PARAMS((unsigned long long int, int, char *, size_t, int));
 #endif
 
 #ifndef FREE
@@ -143,9 +142,11 @@ extern char *fmtullong __P((unsigned long long int, int, char *, size_t, int));
    302 / 1000 is log10 (2) rounded up;
    add one for integer division truncation;
    add one more for a minus sign if t is signed.  */
+#ifndef INT_STRLEN_BOUND
 #define INT_STRLEN_BOUND(t) \
   ((sizeof (t) * CHAR_BIT - TYPE_SIGNED (t)) * 302 / 1000 \
      + 1 + TYPE_SIGNED (t))
+#endif
 
 /* conversion flags */
 #define PF_ALTFORM	0x00001		/* # */
@@ -270,51 +271,70 @@ struct DATA
 
 /* the floating point stuff */
 #ifdef FLOATING_POINT
-static double pow_10 __P((int));
-static int log_10 __P((double));
-static double integral __P((double, double *));
-static char *numtoa __P((double, int, int, char **));
+static double pow_10 PARAMS((int));
+static int log_10 PARAMS((double));
+static double integral PARAMS((double, double *));
+static char *numtoa PARAMS((double, int, int, char **));
 #endif
 
-static void init_data __P((struct DATA *, char *, size_t, const char *, int));
-static void init_conv_flag __P((struct DATA *));
+static void init_data PARAMS((struct DATA *, char *, size_t, const char *, int));
+static void init_conv_flag PARAMS((struct DATA *));
 
 /* for the format */
 #ifdef FLOATING_POINT
-static void floating __P((struct DATA *, double));
-static void exponent __P((struct DATA *, double));
+static void floating PARAMS((struct DATA *, double));
+static void exponent PARAMS((struct DATA *, double));
 #endif
-static void number __P((struct DATA *, unsigned long, int));
-#ifdef HAVE_LONG_LONG
-static void lnumber __P((struct DATA *, unsigned long long, int));
+static void number PARAMS((struct DATA *, unsigned long, int));
+#ifdef HAVE_LONG_LONG_INT
+static void lnumber PARAMS((struct DATA *, unsigned long long, int));
 #endif
-static void pointer __P((struct DATA *, unsigned long));
-static void strings __P((struct DATA *, char *));
+static void pointer PARAMS((struct DATA *, unsigned long));
+static void strings PARAMS((struct DATA *, char *));
 
 #ifdef FLOATING_POINT
 #  define FALLBACK_FMTSIZE	32
 #  define FALLBACK_BASE		4096
 #  define LFALLBACK_BASE	5120
 #  ifdef HAVE_LONG_DOUBLE
-static void ldfallback __P((struct DATA *, const char *, const char *, long double));
+static void ldfallback PARAMS((struct DATA *, const char *, const char *, long double));
 #  endif
-static void dfallback __P((struct DATA *, const char *, const char *, double));
+static void dfallback PARAMS((struct DATA *, const char *, const char *, double));
 #endif
 
-static char *groupnum __P((char *));
+static char *groupnum PARAMS((char *));
 
-#ifndef HAVE_ISINF_IN_LIBC
-static int isinf __P((double));
+#if defined (HAVE_LONG_DOUBLE)
+#  define LONGDOUBLE long double
+#else
+#  define LONGDOUBLE double
 #endif
-#ifndef HAVE_ISNAN_IN_LIBC
-static int isnan __P((double));
+
+#ifndef isnan
+  static inline int isnan_f  (float       x) { return x != x; }
+  static inline int isnan_d  (double      x) { return x != x; }
+  static inline int isnan_ld (LONGDOUBLE  x) { return x != x; }
+  # define isnan(x) \
+      (sizeof (x) == sizeof (LONGDOUBLE) ? isnan_ld (x) \
+       : sizeof (x) == sizeof (double) ? isnan_d (x) \
+       : isnan_f (x))
+#endif
+  
+#ifndef isinf
+  static inline int isinf_f  (float       x) { return !isnan (x) && isnan (x - x); }
+  static inline int isinf_d  (double      x) { return !isnan (x) && isnan (x - x); }
+  static inline int isinf_ld (LONGDOUBLE  x) { return !isnan (x) && isnan (x - x); }
+  # define isinf(x) \
+      (sizeof (x) == sizeof (LONGDOUBLE) ? isinf_ld (x) \
+       : sizeof (x) == sizeof (double) ? isinf_d (x) \
+       : isinf_f (x))
 #endif
 
 #ifdef DRIVER
 static void memory_error_and_abort ();
-static void *xmalloc __P((size_t));
-static void *xrealloc __P((void *, size_t));
-static void xfree __P((void *));
+static void *xmalloc PARAMS((size_t));
+static void *xrealloc PARAMS((void *, size_t));
+static void xfree PARAMS((void *));
 #else
 #  include <xmalloc.h>
 #endif
@@ -371,7 +391,7 @@ static void xfree __P((void *));
 	while (0)
 
 #define PUT_PLUS(d, p, zero) \
-	    if ((d) > zero && (p)->justify == RIGHT) \
+	    if (((p)->flags & PF_PLUS) && (d) > zero) \
 	      PUT_CHAR('+', p)
 
 #define PUT_SPACE(d, p, zero) \
@@ -431,9 +451,9 @@ static void xfree __P((void *));
 	  if (lv) \
 	    { \
 	      if (lv->decimal_point && lv->decimal_point[0]) \
-	        (d) = lv->decimal_point[0]; \
+		(d) = lv->decimal_point[0]; \
 	      if (lv->thousands_sep && lv->thousands_sep[0]) \
-	        (t) = lv->thousands_sep[0]; \
+		(t) = lv->thousands_sep[0]; \
 	      (g) = lv->grouping ? lv->grouping : ""; \
 	      if (*(g) == '\0' || *(g) == CHAR_MAX || (t) == -1) (g) = 0; \
 	    } \
@@ -574,7 +594,7 @@ integral(real, ip)
 /* 
  * return an ascii representation of the integral part of the number
  * and set fract to be an ascii representation of the fraction part
- * the container for the fraction and the integral part or staticly
+ * the container for the fraction and the integral part or statically
  * declare with fix size 
  */
 static char *
@@ -586,10 +606,9 @@ numtoa(number, base, precision, fract)
   register int i, j;
   double ip, fp; /* integer and fraction part */
   double fraction;
-  int digits = MAX_INT - 1;
+  int digits, sign;
   static char integral_part[MAX_INT];
   static char fraction_part[MAX_FRACT];
-  double sign;
   int ch;
 
   /* taking care of the obvious case: 0.0 */
@@ -607,8 +626,12 @@ numtoa(number, base, precision, fract)
       return integral_part;
     }
 
+  /* -0 is tricky */
+  sign = (number == -0.) ? '-' : ((number < 0.) ? '-' : '+');
+  digits = MAX_INT - 1;
+
   /* for negative numbers */
-  if ((sign = number) < 0.)
+  if (sign == '-')
     {
       number = -number;
       digits--; /* sign consume one digit */
@@ -643,7 +666,7 @@ numtoa(number, base, precision, fract)
       integral_part[i] = '9';
 
   /* put the sign ? */
-  if (sign < 0.)
+  if (sign == '-')
     integral_part[i++] = '-';
 
   integral_part[i] = '\0';
@@ -682,9 +705,13 @@ number(p, d, base)
   long sd;
   int flags;
 
-  /* An explicit precision turns off the zero-padding flag. */
+  /* An explicit precision turns off the zero-padding flag and sets the
+     pad character back to space. */
   if ((p->flags & PF_ZEROPAD) && p->precision >= 0 && (p->flags & PF_DOT))
-    p->flags &= ~PF_ZEROPAD;
+    {
+      p->flags &= ~PF_ZEROPAD;
+      p->pad = ' ';
+    }
 
   sd = d;	/* signed for ' ' padding in base 10 */
   flags = 0;
@@ -698,10 +725,11 @@ number(p, d, base)
     {
       GETLOCALEDATA(decpoint, thoussep, grouping);
       if (grouping && (t = groupnum (tmp)))
-        tmp = t;
+	tmp = t;
     }
 
-  p->width -= strlen(tmp);
+  /* need to add one for any `+', but we only add one in base 10 */
+  p->width -= strlen(tmp) + (base == 10 && d > 0 && (p->flags & PF_PLUS));
   PAD_RIGHT(p);
 
   if ((p->flags & PF_DOT) && p->precision > 0)
@@ -739,7 +767,7 @@ number(p, d, base)
   FREE (t);
 }
 
-#ifdef HAVE_LONG_LONG
+#ifdef HAVE_LONG_LONG_INT
 /*
  * identical to number() but works for `long long'
  */
@@ -753,9 +781,13 @@ lnumber(p, d, base)
   long long sd;
   int flags;
 
-  /* An explicit precision turns off the zero-padding flag. */
+  /* An explicit precision turns off the zero-padding flag and sets the
+     pad character back to space. */
   if ((p->flags & PF_ZEROPAD) && p->precision >= 0 && (p->flags & PF_DOT))
-    p->flags &= ~PF_ZEROPAD;
+    {
+      p->flags &= ~PF_ZEROPAD;
+      p->pad = ' ';
+    }
 
   sd = d;	/* signed for ' ' padding in base 10 */
   flags = (*p->pf == 'x' || *p->pf == 'X' || *p->pf == 'o' || *p->pf == 'u' || *p->pf == 'U') ? FL_UNSIGNED : 0;
@@ -768,10 +800,11 @@ lnumber(p, d, base)
     {
       GETLOCALEDATA(decpoint, thoussep, grouping);
       if (grouping && (t = groupnum (tmp)))
-        tmp = t;
+	tmp = t;
     }
 
-  p->width -= strlen(tmp);
+  /* need to add one for any `+', but we only add one in base 10 */
+  p->width -= strlen(tmp) + (base == 10 && d > 0 && (p->flags & PF_PLUS));
   PAD_RIGHT(p);
 
   if ((p->flags & PF_DOT) && p->precision > 0)
@@ -875,11 +908,11 @@ wstrings(p, tmp)
     {
       len = wcsrtombs (NULL, &ws, 0, &mbs);
       if (len != (size_t)-1)
-        {
+	{
 	  memset (&mbs, '\0', sizeof (mbstate_t));
 	  os = (char *)xmalloc (len + 1);
 	  (void)wcsrtombs (os, &ws, len + 1, &mbs);
-        }
+	}
     }
   if (len == (size_t)-1)
     {
@@ -918,32 +951,6 @@ wchars (p, wc)
 #endif /* HANDLE_MULTIBYTE */
 
 #ifdef FLOATING_POINT
-
-#ifndef HAVE_ISINF_IN_LIBC
-/* Half-assed versions, since we don't want to link with libm. */
-static int
-isinf(d)
-     double d;
-{
-#ifdef DBL_MAX
-  if (d < DBL_MIN)
-    return -1;
-  else if (d > DBL_MAX)
-    return 1;
-  else
-#endif
-    return 0;
-}
-#endif
-
-#ifndef HAVE_ISNAN_IN_LIBC
-static int
-isnan(d)
-     double d;
-{
-  return 0;
-}
-#endif
 
 /* Check for [+-]infinity and NaN.  If MODE == 1, we check for Infinity, else
    (mode == 2) we check for NaN.  This does the necessary printing.  Returns
@@ -1002,19 +1009,35 @@ floating(p, d)
     {
       /* smash the trailing zeros unless altform */
       for (i = strlen(tmp2) - 1; i >= 0 && tmp2[i] == '0'; i--)
-        tmp2[i] = '\0'; 
+	tmp2[i] = '\0'; 
       if (tmp2[0] == '\0')
 	p->precision = 0;
     }
 
   /* calculate the padding. 1 for the dot */
   p->width = p->width -
+  	    /* XXX - should this be d>0. && (p->flags & PF_PLUS) ? */
+#if 0
 	    ((d > 0. && p->justify == RIGHT) ? 1:0) -
+#else
+	    ((d > 0. && (p->flags & PF_PLUS)) ? 1:0) -
+#endif
 	    ((p->flags & PF_SPACE) ? 1:0) -
 	    strlen(tmp) - p->precision -
 	    ((p->precision != 0 || (p->flags & PF_ALTFORM)) ? 1 : 0);	/* radix char */
-  PAD_RIGHT(p);  
-  PUT_PLUS(d, p, 0.);
+
+  if (p->pad == ' ')
+    {
+      PAD_RIGHT(p);
+      PUT_PLUS(d, p, 0.);
+    }
+  else
+    {
+      if (*tmp == '-')
+	PUT_CHAR(*tmp++, p);
+      PUT_PLUS(d, p, 0.);
+      PAD_RIGHT(p);
+    }
   PUT_SPACE(d, p, 0.);
 
   while (*tmp)
@@ -1058,14 +1081,30 @@ exponent(p, d)
   tmp = dtoa(d, p->precision, &tmp2);
 
   /* 1 for unit, 1 for the '.', 1 for 'e|E',
-   * 1 for '+|-', 2 for 'exp' */
+   * 1 for '+|-', 2 for 'exp'  (but no `.' if precision == 0 */
   /* calculate how much padding need */
   p->width = p->width - 
+  	    /* XXX - should this be d>0. && (p->flags & PF_PLUS) ? */
+#if 0
 	     ((d > 0. && p->justify == RIGHT) ? 1:0) -
-	     ((p->flags & PF_SPACE) ? 1:0) - p->precision - 6;
+#else
+	     ((d > 0. && (p->flags & PF_PLUS)) ? 1:0) -
+#endif
+	     (p->precision != 0 || (p->flags & PF_ALTFORM)) -
+	     ((p->flags & PF_SPACE) ? 1:0) - p->precision - 5;
 
-  PAD_RIGHT(p);
-  PUT_PLUS(d, p, 0.);
+  if (p->pad == ' ')
+    {
+      PAD_RIGHT(p);
+      PUT_PLUS(d, p, 0.);
+    }
+  else
+    {
+      if (*tmp == '-')
+	PUT_CHAR(*tmp++, p);
+      PUT_PLUS(d, p, 0.);
+      PAD_RIGHT(p);
+    }
   PUT_SPACE(d, p, 0.);
 
   while (*tmp)
@@ -1163,7 +1202,7 @@ groupnum (s)
 	  else if (*g == CHAR_MAX)
 	    {
 	      do
-	        *--re = *--se;
+		*--re = *--se;
 	      while (se > s);
 	      break;
 	    }
@@ -1223,7 +1262,7 @@ vsnprintf_internal(data, string, length, format, args)
   long double ld;	/* for later */
 #endif
   unsigned long ul;
-#ifdef HAVE_LONG_LONG
+#ifdef HAVE_UNSIGNED_LONG_LONG_INT
   unsigned long long ull;
 #endif
   int state, i, c, n;
@@ -1295,10 +1334,6 @@ vsnprintf_internal(data, string, length, format, args)
 	      case '#':
 		data->flags |= PF_ALTFORM;
 		continue;
-	      case '0':
-		data->flags |= PF_ZEROPAD;
-		data->pad = '0';
-		continue;
 	      case '*':
 		if (data->flags & PF_DOT)
 		  data->flags |= PF_STAR_P;
@@ -1322,13 +1357,25 @@ vsnprintf_internal(data, string, length, format, args)
 		if ((data->flags & PF_DOT) == 0)
 		  {
 		    data->flags |= PF_PLUS;
-		    data->justify = RIGHT;
+		    if ((data->flags & PF_LADJUST) == 0)
+		      data->justify = RIGHT;
 		  }
 		continue;
 	      case '\'':
 		data->flags |= PF_THOUSANDS;
 		continue;
 
+	      case '0':
+		/* If we're not specifying precision (in which case we've seen
+		   a `.') and we're not performing left-adjustment (in which
+		   case the `0' is ignored), a `0' is taken as the zero-padding
+		   flag. */
+	        if ((data->flags & (PF_DOT|PF_LADJUST)) == 0)
+		  {
+		    data->flags |= PF_ZEROPAD;
+		    data->pad = '0';
+		    continue;
+		  }
 	      case '1': case '2': case '3':
 	      case '4': case '5': case '6':
 	      case '7': case '8': case '9':
@@ -1410,8 +1457,9 @@ conv_break:
 		else
 		  {
 		    /* reduce precision by 1 because of leading digit before
-		       decimal point in e format. */
-		    data->precision--;
+		       decimal point in e format, unless specified as 0. */
+		    if (data->precision > 0)
+		      data->precision--;
 		    exponent(data, d);
 		  }
 		state = 0;
@@ -1438,7 +1486,7 @@ conv_break:
 		/* FALLTHROUGH */
 	      case 'u':
 		STAR_ARGS(data);
-#ifdef HAVE_LONG_LONG
+#ifdef HAVE_LONG_LONG_INT
 		if (data->flags & PF_LONGLONG)
 		  {
 		    ull = GETARG (unsigned long long);
@@ -1458,7 +1506,7 @@ conv_break:
 	      case 'd':  /* decimal */
 	      case 'i':
 		STAR_ARGS(data);
-#ifdef HAVE_LONG_LONG
+#ifdef HAVE_LONG_LONG_INT
 		if (data->flags & PF_LONGLONG)
 		  {
 		    ull = GETARG (long long);
@@ -1474,7 +1522,7 @@ conv_break:
 		break;
 	      case 'o':  /* octal */
 		STAR_ARGS(data);
-#ifdef HAVE_LONG_LONG
+#ifdef HAVE_LONG_LONG_INT
 		if (data->flags & PF_LONGLONG)
 		  {
 		    ull = GETARG (unsigned long long);
@@ -1491,7 +1539,7 @@ conv_break:
 	      case 'x': 
 	      case 'X':  /* hexadecimal */
 		STAR_ARGS(data);
-#ifdef HAVE_LONG_LONG
+#ifdef HAVE_LONG_LONG_INT
 		if (data->flags & PF_LONGLONG)
 		  {
 		    ull = GETARG (unsigned long long);
@@ -1554,7 +1602,7 @@ conv_break:
 		state = 0;
 		break;
 	      case 'n':
-#ifdef HAVE_LONG_LONG
+#ifdef HAVE_LONG_LONG_INT
 		if (data->flags & PF_LONGLONG)
 		  *(GETARG (long long *)) = data->counter;
 		else
@@ -2034,7 +2082,7 @@ main()
   printf("<%s>\n", holder);
   printf("<%s>\n\n", h);
 
-#ifdef HAVE_LONG_LONG
+#ifdef HAVE_LONG_LONG_INT
   printf ("<%%llu> LLONG_MAX+1\n");
   i = snprintf(holder, 100, "%llu", (unsigned long long)(LLONG_MAX)+1);
   i = asprintf(&h, "%llu", (unsigned long long)(LLONG_MAX)+1);

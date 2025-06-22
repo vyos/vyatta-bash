@@ -1,7 +1,7 @@
 This file is pushd.def, from which is created pushd.c.  It implements the
 builtins "pushd", "popd", and "dirs" in Bash.
 
-Copyright (C) 1987-2009 Free Software Foundation, Inc.
+Copyright (C) 1987-2020 Free Software Foundation, Inc.
 
 This file is part of GNU Bash, the Bourne Again SHell.
 
@@ -32,19 +32,19 @@ directory.  With no arguments, exchanges the top two directories.
 
 Options:
   -n	Suppresses the normal change of directory when adding
-	directories to the stack, so only the stack is manipulated.
+		directories to the stack, so only the stack is manipulated.
 
 Arguments:
   +N	Rotates the stack so that the Nth directory (counting
-	from the left of the list shown by `dirs', starting with
-	zero) is at the top.
+		from the left of the list shown by `dirs', starting with
+		zero) is at the top.
 
   -N	Rotates the stack so that the Nth directory (counting
-	from the right of the list shown by `dirs', starting with
-	zero) is at the top.
+		from the right of the list shown by `dirs', starting with
+		zero) is at the top.
 
   dir	Adds DIR to the directory stack at the top, making it the
-	new current working directory.
+		new current working directory.
 
 The `dirs' builtin displays the directory stack.
 
@@ -64,16 +64,16 @@ the top directory from the stack, and changes to the new top directory.
 
 Options:
   -n	Suppresses the normal change of directory when removing
-	directories from the stack, so only the stack is manipulated.
+		directories from the stack, so only the stack is manipulated.
 
 Arguments:
   +N	Removes the Nth entry counting from the left of the list
-	shown by `dirs', starting with zero.  For example: `popd +0'
-	removes the first directory, `popd +1' the second.
+		shown by `dirs', starting with zero.  For example: `popd +0'
+		removes the first directory, `popd +1' the second.
 
   -N	Removes the Nth entry counting from the right of the list
-	shown by `dirs', starting with zero.  For example: `popd -0'
-	removes the last directory, `popd -1' the next to last.
+		shown by `dirs', starting with zero.  For example: `popd -0'
+		removes the last directory, `popd -1' the next to last.
 
 The `dirs' builtin displays the directory stack.
 
@@ -95,17 +95,19 @@ back up through the list with the `popd' command.
 Options:
   -c	clear the directory stack by deleting all of the elements
   -l	do not print tilde-prefixed versions of directories relative
-	to your home directory
+		to your home directory
   -p	print the directory stack with one entry per line
   -v	print the directory stack with one entry per line prefixed
-	with its position in the stack
+		with its position in the stack
 
 Arguments:
-  +N	Displays the Nth entry counting from the left of the list shown by
-	dirs when invoked without options, starting with zero.
+  +N	Displays the Nth entry counting from the left of the list
+		shown by dirs when invoked without options, starting with
+		zero.
 
-  -N	Displays the Nth entry counting from the right of the list shown by
-	dirs when invoked without options, starting with zero.
+  -N	Displays the Nth entry counting from the right of the list
+		shown by dirs when invoked without options, starting with
+		zero.
 
 Exit Status:
 Returns success unless an invalid option is supplied or an error occurs.
@@ -115,7 +117,7 @@ $END
 
 #if defined (PUSHD_AND_POPD)
 #include <stdio.h>
-#ifndef _MINIX
+#if defined (HAVE_SYS_PARAM_H)
 #  include <sys/param.h>
 #endif
 
@@ -155,12 +157,12 @@ static int directory_list_size;
 /* Offset to the end of the list. */
 static int directory_list_offset;
 
-static void pushd_error __P((int, char *));
-static void clear_directory_stack __P((void));
-static int cd_to_string __P((char *));
-static int change_to_temp __P((char *));
-static void add_dirstack_element __P((char *));
-static int get_dirstack_index __P((intmax_t, int, int *));
+static void pushd_error PARAMS((int, char *));
+static void clear_directory_stack PARAMS((void));
+static int cd_to_string PARAMS((char *));
+static int change_to_temp PARAMS((char *));
+static void add_dirstack_element PARAMS((char *));
+static int get_dirstack_index PARAMS((intmax_t, int, int *));
 
 #define NOCD		0x01
 #define ROTATE		0x02
@@ -178,6 +180,8 @@ pushd_builtin (list)
   char direction;
 
   orig_list = list;
+
+  CHECK_HELPOPT (list);
   if (list && list->word && ISOPTION (list->word->word, '-'))
     {
       list = list->next;
@@ -228,7 +232,7 @@ pushd_builtin (list)
 	    {
 	      sh_invalidnum (list->word->word);
 	      builtin_usage ();
-	      return (EXECUTION_FAILURE);
+	      return (EX_USAGE);
 	    }
 
 	  if (direction == '-')
@@ -245,7 +249,7 @@ pushd_builtin (list)
 	{
 	  sh_invalidopt (list->word->word);
 	  builtin_usage ();
-	  return (EXECUTION_FAILURE);
+	  return (EX_USAGE);
 	}
       else
 	break;
@@ -321,6 +325,8 @@ popd_builtin (list)
   char direction;
   char *which_word;
 
+  CHECK_HELPOPT (list);
+
   which_word = (char *)NULL;
   for (flags = 0, which = 0, direction = '+'; list; list = list->next)
     {
@@ -339,7 +345,7 @@ popd_builtin (list)
 	    {
 	      sh_invalidnum (list->word->word);
 	      builtin_usage ();
-	      return (EXECUTION_FAILURE);
+	      return (EX_USAGE);
 	    }
 	  which_word = list->word->word;
 	}
@@ -347,13 +353,19 @@ popd_builtin (list)
 	{
 	  sh_invalidopt (list->word->word);
 	  builtin_usage ();
-	  return (EXECUTION_FAILURE);
+	  return (EX_USAGE);
+	}
+      else if (*list->word->word)
+	{
+	  builtin_error (_("%s: invalid argument"), list->word->word);
+	  builtin_usage ();
+	  return (EX_USAGE);
 	}
       else
 	break;
     }
 
-  if (which > directory_list_offset || (directory_list_offset == 0 && which == 0))
+  if (which > directory_list_offset || (which < -directory_list_offset) || (directory_list_offset == 0 && which == 0))
     {
       pushd_error (directory_list_offset, which_word ? which_word : "");
       return (EXECUTION_FAILURE);
@@ -375,6 +387,11 @@ popd_builtin (list)
 	 remove that directory from the list and shift the remainder
 	 of the list into place. */
       i = (direction == '+') ? directory_list_offset - which : which;
+      if (i < 0 || i > directory_list_offset)
+	{
+	  pushd_error (directory_list_offset, which_word ? which_word : "");
+	  return (EXECUTION_FAILURE);
+	}
       free (pushd_directory_list[i]);
       directory_list_offset--;
 
@@ -396,6 +413,7 @@ dirs_builtin (list)
   intmax_t i;
   char *temp, *w;
 
+  CHECK_HELPOPT (list);
   for (flags = vflag = index_flag = 0, desired_index = -1, w = ""; list; list = list->next)
     {
       if (ISOPTION (list->word->word, 'l'))
@@ -426,7 +444,7 @@ dirs_builtin (list)
 	    {
 	      sh_invalidnum (list->word->word);
 	      builtin_usage ();
-	      return (EXECUTION_FAILURE);
+	      return (EX_USAGE);
 	    }
 	  sign = (*list->word->word == '+') ? 1 : -1;
 	  desired_index = get_dirstack_index (i, sign, &index_flag);
@@ -435,7 +453,7 @@ dirs_builtin (list)
 	{
 	  sh_invalidopt (list->word->word);
 	  builtin_usage ();
-	  return (EXECUTION_FAILURE);
+	  return (EX_USAGE);
 	}
     }
 
@@ -660,7 +678,7 @@ get_directory_stack (flags)
     d = ".";
   else
     {
-      t = polite_directory_format (d);
+      t = (flags&1) ? polite_directory_format (d) : d;
       /* polite_directory_format sometimes returns its argument unchanged.
 	 If it does not, we can free d right away.  If it does, we need to
 	 mark d to be deleted later. */

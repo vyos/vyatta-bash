@@ -1,7 +1,7 @@
 #
 # Simple makefile for the sample loadable builtins
 #
-# Copyright (C) 1996-2009 Free Software Foundation, Inc.     
+# Copyright (C) 1996-2022 Free Software Foundation, Inc.
 
 #   This program is free software: you can redistribute it and/or modify
 #   it under the terms of the GNU General Public License as published by
@@ -17,6 +17,9 @@
 #   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 
+PACKAGE = @PACKAGE_NAME@
+VERSION = @PACKAGE_VERSION@
+
 # Include some boilerplate Gnu makefile definitions.
 prefix = @prefix@
 
@@ -28,10 +31,22 @@ includedir = @includedir@
 
 datarootdir = @datarootdir@
 
+loadablesdir = @loadablesdir@
+headersdir = @headersdir@
+
 topdir = @top_srcdir@
 BUILD_DIR = @BUILD_DIR@
 srcdir = @srcdir@
-VPATH = .:@srcdir@
+VPATH = @srcdir@
+
+# Support an alternate destination root directory for package building
+DESTDIR =
+
+INSTALL = @INSTALL@
+INSTALL_PROGRAM = @INSTALL_PROGRAM@
+INSTALL_SCRIPT = @INSTALL_SCRIPT@
+INSTALL_DATA = @INSTALL_DATA@
+INSTALLMODE= -m 0755
 
 @SET_MAKE@
 CC = @CC@
@@ -43,6 +58,7 @@ host_os = @host_os@
 host_cpu = @host_cpu@
 host_vendor = @host_vendor@
 
+STYLE_CFLAGS = @STYLE_CFLAGS@
 CFLAGS = @CFLAGS@
 LOCAL_CFLAGS = @LOCAL_CFLAGS@
 DEFS = @DEFS@
@@ -52,6 +68,8 @@ CPPFLAGS = @CPPFLAGS@
 
 BASHINCDIR = ${topdir}/include
 
+SUPPORT_SRC = $(topdir)/support/
+
 LIBBUILD = ${BUILD_DIR}/lib
 
 INTL_LIBSRC = ${topdir}/lib/intl
@@ -59,7 +77,7 @@ INTL_BUILDDIR = ${LIBBUILD}/intl
 INTL_INC = @INTL_INC@
 LIBINTL_H = @LIBINTL_H@
 
-CCFLAGS = $(DEFS) $(LOCAL_DEFS) $(LOCAL_CFLAGS) $(CFLAGS)
+CCFLAGS = $(DEFS) $(LOCAL_DEFS) $(LOCAL_CFLAGS) $(CPPFLAGS) $(CFLAGS) $(STYLE_CFLAGS)
 
 #
 # These values are generated for configure by ${topdir}/support/shobj-conf.
@@ -75,7 +93,7 @@ SHOBJ_XLDFLAGS = @SHOBJ_XLDFLAGS@
 SHOBJ_LIBS = @SHOBJ_LIBS@
 SHOBJ_STATUS = @SHOBJ_STATUS@
 
-INC = -I. -I.. -I$(topdir) -I$(topdir)/lib -I$(topdir)/builtins \
+INC = -I. -I.. -I$(topdir) -I$(topdir)/lib -I$(topdir)/builtins -I${srcdir} \
       -I$(BASHINCDIR) -I$(BUILD_DIR) -I$(LIBBUILD) \
       -I$(BUILD_DIR)/builtins $(INTL_INC)
 
@@ -83,10 +101,11 @@ INC = -I. -I.. -I$(topdir) -I$(topdir)/lib -I$(topdir)/builtins \
 	$(SHOBJ_CC) $(SHOBJ_CFLAGS) $(CCFLAGS) $(INC) -c -o $@ $<
 
 
-ALLPROG = print truefalse sleep pushd finfo logname basename dirname \
-	  tty pathchk tee head mkdir rmdir printenv id whoami \
-	  uname sync push ln unlink cut realpath getconf strftime mypid
-OTHERPROG = necho hello cat
+ALLPROG = print truefalse sleep finfo logname basename dirname fdflags \
+	  tty pathchk tee head mkdir rmdir mkfifo mktemp printenv id whoami \
+	  uname sync push ln unlink realpath strftime mypid setpgid seq rm \
+	  accept csv dsv cut stat getconf
+OTHERPROG = necho hello cat pushd asort
 
 all:	$(SHOBJ_STATUS)
 
@@ -98,7 +117,7 @@ unsupported:
 	@echo "${topdir}/support/shobj-conf script."
 	@echo "If your operating system provides facilities for dynamic"
 	@echo "loading of shared objects using the dlopen(3) interface,"
-	@echo "please update the script and re-run configure.
+	@echo "please update the script and re-run configure."
 	@echo "Please send the changes you made to bash-maintainers@gnu.org"
 	@echo "for inclusion in future bash releases."
 
@@ -110,14 +129,14 @@ print:	print.o
 necho:	necho.o
 	$(SHOBJ_LD) $(SHOBJ_LDFLAGS) $(SHOBJ_XLDFLAGS) -o $@ necho.o $(SHOBJ_LIBS)
 
-getconf: getconf.o
-	$(SHOBJ_LD) $(SHOBJ_LDFLAGS) $(SHOBJ_XLDFLAGS) -o $@ getconf.o $(SHOBJ_LIBS)
-
 hello:	hello.o
 	$(SHOBJ_LD) $(SHOBJ_LDFLAGS) $(SHOBJ_XLDFLAGS) -o $@ hello.o $(SHOBJ_LIBS)
 
 truefalse: truefalse.o
 	$(SHOBJ_LD) $(SHOBJ_LDFLAGS) $(SHOBJ_XLDFLAGS) -o $@ truefalse.o $(SHOBJ_LIBS)
+
+accept:	accept.o
+	$(SHOBJ_LD) $(SHOBJ_LDFLAGS) $(SHOBJ_XLDFLAGS) -o $@ accept.o $(SHOBJ_LIBS)
 
 sleep:	sleep.o
 	$(SHOBJ_LD) $(SHOBJ_LDFLAGS) $(SHOBJ_XLDFLAGS) -o $@ sleep.o $(SHOBJ_LIBS)
@@ -127,6 +146,15 @@ finfo:	finfo.o
 
 cat:	cat.o
 	$(SHOBJ_LD) $(SHOBJ_LDFLAGS) $(SHOBJ_XLDFLAGS) -o $@ cat.o $(SHOBJ_LIBS)
+
+rm:	rm.o
+	$(SHOBJ_LD) $(SHOBJ_LDFLAGS) $(SHOBJ_XLDFLAGS) -o $@ rm.o $(SHOBJ_LIBS)
+
+fdflags:	fdflags.o
+	$(SHOBJ_LD) $(SHOBJ_LDFLAGS) $(SHOBJ_XLDFLAGS) -o $@ fdflags.o $(SHOBJ_LIBS)
+
+seq:	seq.o
+	$(SHOBJ_LD) $(SHOBJ_LDFLAGS) $(SHOBJ_XLDFLAGS) -o $@ seq.o $(SHOBJ_LIBS)
 
 logname:	logname.o
 	$(SHOBJ_LD) $(SHOBJ_LDFLAGS) $(SHOBJ_XLDFLAGS) -o $@ logname.o $(SHOBJ_LIBS)
@@ -152,11 +180,20 @@ mkdir:	mkdir.o
 rmdir:	rmdir.o
 	$(SHOBJ_LD) $(SHOBJ_LDFLAGS) $(SHOBJ_XLDFLAGS) -o $@ rmdir.o $(SHOBJ_LIBS)
 
+mkfifo:	mkfifo.o
+	$(SHOBJ_LD) $(SHOBJ_LDFLAGS) $(SHOBJ_XLDFLAGS) -o $@ mkfifo.o $(SHOBJ_LIBS)
+
+mktemp:	mktemp.o
+	$(SHOBJ_LD) $(SHOBJ_LDFLAGS) $(SHOBJ_XLDFLAGS) -o $@ mktemp.o $(SHOBJ_LIBS)
+
 head:	head.o
 	$(SHOBJ_LD) $(SHOBJ_LDFLAGS) $(SHOBJ_XLDFLAGS) -o $@ head.o $(SHOBJ_LIBS)
 
 printenv:	printenv.o
 	$(SHOBJ_LD) $(SHOBJ_LDFLAGS) $(SHOBJ_XLDFLAGS) -o $@ printenv.o $(SHOBJ_LIBS)
+
+getconf:	getconf.o
+	$(SHOBJ_LD) $(SHOBJ_LDFLAGS) $(SHOBJ_XLDFLAGS) -o $@ getconf.o $(SHOBJ_LIBS)
 
 id:	id.o
 	$(SHOBJ_LD) $(SHOBJ_LDFLAGS) $(SHOBJ_XLDFLAGS) -o $@ id.o $(SHOBJ_LIBS)
@@ -179,17 +216,32 @@ ln:	ln.o
 unlink:	unlink.o
 	$(SHOBJ_LD) $(SHOBJ_LDFLAGS) $(SHOBJ_XLDFLAGS) -o $@ unlink.o $(SHOBJ_LIBS)
 
-cut:	cut.o
-	$(SHOBJ_LD) $(SHOBJ_LDFLAGS) $(SHOBJ_XLDFLAGS) -o $@ cut.o $(SHOBJ_LIBS)
-
 realpath:	realpath.o
 	$(SHOBJ_LD) $(SHOBJ_LDFLAGS) $(SHOBJ_XLDFLAGS) -o $@ realpath.o $(SHOBJ_LIBS)
+
+csv:	csv.o
+	$(SHOBJ_LD) $(SHOBJ_LDFLAGS) $(SHOBJ_XLDFLAGS) -o $@ csv.o $(SHOBJ_LIBS)
+
+dsv:	dsv.o
+	$(SHOBJ_LD) $(SHOBJ_LDFLAGS) $(SHOBJ_XLDFLAGS) -o $@ dsv.o $(SHOBJ_LIBS)
+
+cut:	cut.o
+	$(SHOBJ_LD) $(SHOBJ_LDFLAGS) $(SHOBJ_XLDFLAGS) -o $@ cut.o $(SHOBJ_LIBS)
 
 strftime:	strftime.o
 	$(SHOBJ_LD) $(SHOBJ_LDFLAGS) $(SHOBJ_XLDFLAGS) -o $@ strftime.o $(SHOBJ_LIBS)
 
 mypid:	mypid.o
 	$(SHOBJ_LD) $(SHOBJ_LDFLAGS) $(SHOBJ_XLDFLAGS) -o $@ mypid.o $(SHOBJ_LIBS)
+
+setpgid:	setpgid.o
+	$(SHOBJ_LD) $(SHOBJ_LDFLAGS) $(SHOBJ_XLDFLAGS) -o $@ setpgid.o $(SHOBJ_LIBS)
+
+stat:	stat.o
+	$(SHOBJ_LD) $(SHOBJ_LDFLAGS) $(SHOBJ_XLDFLAGS) -o $@ stat.o $(SHOBJ_LIBS)
+
+asort:	asort.o
+	$(SHOBJ_LD) $(SHOBJ_LDFLAGS) $(SHOBJ_XLDFLAGS) -o $@ asort.o $(SHOBJ_LIBS)
 
 # pushd is a special case.  We use the same source that the builtin version
 # uses, with special compilation options.
@@ -200,7 +252,7 @@ pushd.c:	${topdir}/builtins/pushd.def
 
 pushd.o:	pushd.c
 	$(RM) $@
-	$(SHOBJ_CC) -DHAVE_CONFIG_H -DPUSHD_AND_POPD -DLOADABLE_BUILTIN $(SHOBJ_CFLAGS) $(CFLAGS) $(CPPFLAGS) $(INC) -c -o $@ $<
+	$(SHOBJ_CC) -Wno-format-security -DHAVE_CONFIG_H -DPUSHD_AND_POPD -DLOADABLE_BUILTIN $(SHOBJ_CFLAGS) $(CFLAGS) $(CPPFLAGS) $(INC) -c -o $@ $<
 
 pushd:	pushd.o
 	$(SHOBJ_LD) $(SHOBJ_LDFLAGS) $(SHOBJ_XLDFLAGS) -o $@ pushd.o $(SHOBJ_LIBS)
@@ -213,13 +265,45 @@ mostlyclean:	clean
 	-( cd perl && ${MAKE} ${MFLAGS} $@ )
 
 distclean maintainer-clean: clean
-	$(RM) Makefile pushd.c
+	$(RM) Makefile Makefile.inc Makefile.sample pushd.c
 	-( cd perl && ${MAKE} ${MFLAGS} $@ )
+
+installdirs:
+	@${SHELL} $(SUPPORT_SRC)mkinstalldirs $(DESTDIR)$(loadablesdir)
+
+install-dev:	installdirs
+	@$(INSTALL_DATA) Makefile.inc $(DESTDIR)$(loadablesdir)/Makefile.inc
+	@$(INSTALL_DATA) Makefile.sample $(DESTDIR)$(loadablesdir)/Makefile.sample
+	@$(INSTALL_DATA) $(srcdir)/loadables.h $(DESTDIR)$(loadablesdir)/loadables.h
+	@( cd $(BUILD_DIR) && ${MAKE} ${MFLAGS} DESTDIR="$(DESTDIR)" install-headers)
+
+install-supported:	all installdirs install-dev
+	@echo installing example loadable builtins in $(DESTDIR)${loadablesdir}
+	@for prog in ${ALLPROG}; do \
+		echo $$prog ; \
+		$(INSTALL_PROGRAM) $(INSTALLMODE) $$prog $(DESTDIR)$(loadablesdir)/$$prog ;\
+	done
+
+uninstall-dev:
+	-$(RM) $(DESTDIR)$(loadablesdir)/Makefile.inc $(DESTDIR)$(loadablesdir)/Makefile.sample
+	-$(RM) $(DESTDIR)$(loadablesdir)/loadables.h
+	-( cd $(BUILD_DIR) && ${MAKE} ${MFLAGS} DESTDIR="$(DESTDIR)" uninstall-headers)
+
+uninstall-supported:	uninstall-dev
+	-( cd $(DESTDIR)${loadablesdir} && $(RM) ${ALLPROG} )
+
+install-unsupported:
+uninstall-unsupported:
+
+install:	install-$(SHOBJ_STATUS)
+uninstall:	uninstall-$(SHOBJ_STATUS)
 
 print.o: print.c
 truefalse.o: truefalse.c
+accept.o: accept.c
 sleep.o: sleep.c
 finfo.o: finfo.c
+getconf.o: getconf.c getconf.h
 logname.o: logname.c
 basename.o: basename.c
 dirname.o: dirname.c
@@ -229,9 +313,11 @@ tee.o: tee.c
 head.o: head.c
 rmdir.o: rmdir.c
 necho.o: necho.c
-getconf.o: getconf.c
 hello.o: hello.c
 cat.o: cat.c
+csv.o: csv.c
+dsv.o: dsv.c
+cut.o: cut.c
 printenv.o: printenv.c
 id.o: id.c
 whoami.o: whoami.c
@@ -239,6 +325,11 @@ uname.o: uname.c
 sync.o: sync.c
 push.o: push.c
 mkdir.o: mkdir.c
+mktemp.o: mktemp.c
 realpath.o: realpath.c
 strftime.o: strftime.c
-mypid.o: mypid.c
+setpgid.o: setpgid.c
+stat.o: stat.c
+fdflags.o: fdflags.c
+seq.o: seq.c
+asort.o: asort.c

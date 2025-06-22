@@ -1,3 +1,12 @@
+/*
+Copyright (C) 2006-2019 Canonical Ltd.
+
+clear_console and it's man page are free software; you can redistribute it
+and/or modify it under the terms of the GNU General Public License as
+published by the Free Software Foundation; either version 2, or (at your
+option) any later version.
+*/
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <fcntl.h>
@@ -139,21 +148,35 @@ int is_pseudo_tty(int fd)
 {
   char *tty = ttyname(fd);
 
-  if (!strncmp(tty, "/dev/pts/", 9))
+  if (!tty)
+    {
+      if (!quiet)
+	perror("ttyname");
+      return 0;
+    }
+
+  if (strlen(tty) >= 9 && !strncmp(tty, "/dev/pts/", 9))
     return 1;
 
-  if (!strncmp(tty, "/dev/tty", 8) && tty[8] >= 'a' && tty[8] <= 'z')
+  if (strlen(tty) >= 8 && !strncmp(tty, "/dev/tty", 8)
+      && tty[8] >= 'a' && tty[8] <= 'z')
     return 1;
 
   return 0;
 }
 
-void clear_console(int fd)
+int clear_console(int fd)
 {
   int num, tmp_num;
 #if defined(__linux__)
   struct vt_stat vtstat;
 #endif
+
+  /* Linux console secure erase (since 2.6.39), this is sufficient there;
+     other terminals silently ignore this code.  If they don't and write junk
+     instead, well, we're clearing the screen anyway.
+   */ 
+  write(1, "\e[3J", 4);
 
   /* clear screen */
   setupterm((char *) 0, 1, (int *) 0);
@@ -163,10 +186,10 @@ void clear_console(int fd)
     }
 
   if (is_pseudo_tty(STDIN_FILENO))
-    return;
+    return 0;
 
   if (!strcmp(getenv("TERM"), "screen"))
-      return;
+      return 0;
 
   /* get current vt */
 #if defined(__linux__)
@@ -182,7 +205,7 @@ void clear_console(int fd)
 #if defined(__linux__)
   num = vtstat.v_active;
 #endif
-  tmp_num = (num == 1 ? 2 : 1);
+  tmp_num = (num == 6 ? 5 : 6);
 
   /* switch vt to clear the scrollback buffer */
   if (ioctl(fd, VT_ACTIVATE, tmp_num))
@@ -213,6 +236,7 @@ void clear_console(int fd)
 	perror("VT_WAITACTIVE");
       exit(1);
     }
+  return 0;
 }
 
 int main (int argc, char* argv[])

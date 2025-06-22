@@ -98,6 +98,7 @@ extern char *strerror ();
 
 static int validate_path ();
 
+int
 pathchk_builtin (list)
      WORD_LIST *list;
 {
@@ -111,6 +112,7 @@ pathchk_builtin (list)
 	case 'p':
 	  pflag = 1;
 	  break;
+	CASE_HELPOPT;
 	default:
 	  builtin_usage ();
 	  return (EX_USAGE);
@@ -134,7 +136,7 @@ char *pathchk_doc[] = {
 	"Check pathnames for validity.",
 	"",
 	"Check each pathname argument for validity (i.e., it may be used to",
-	"create or access a file without casuing syntax errors) and portability",
+	"create or access a file without causing syntax errors) and portability",
 	"(i.e., no filename truncation will result).  If the `-p' option is",
 	"supplied, more extensive portability checks are performed.",
 	(char *)NULL
@@ -323,7 +325,7 @@ validate_path (path, portability)
       if (!last_elem)
 	{
 	  exists = dir_ok (path);
-	  if (dir_ok == 0)
+	  if (exists == 0)
 	    {
 	      free (parent);
 	      return 1;
@@ -370,8 +372,8 @@ validate_path (path, portability)
   free (parent);
   if (strlen (path) > path_max)
     {
-      builtin_error ("path `%s' has length %d; exceeds limit of %d",
-	     path, strlen (path), path_max);
+      builtin_error ("path `%s' has length %lu; exceeds limit of %d",
+	     path, (unsigned long)strlen (path), path_max);
       return 1;
     }
 

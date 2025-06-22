@@ -1,18 +1,40 @@
+#   This program is free software: you can redistribute it and/or modify
+#   it under the terms of the GNU General Public License as published by
+#   the Free Software Foundation, either version 3 of the License, or
+#   (at your option) any later version.
+#
+#   This program is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty of
+#   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#   GNU General Public License for more details.
+#
+#   You should have received a copy of the GNU General Public License
+#   along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
 export LC_COLLATE=C
 #
 # test the shell globbing
 #
 expect()
 {
-	echo expect "$@"
+:	# if needed, change me to echo expect "$@"
 }
 
 # First, a test that bash-2.01.1 fails
 ${THIS_SH} ./glob1.sub
+${THIS_SH} ./glob2.sub
+${THIS_SH} ./glob3.sub
+${THIS_SH} ./glob4.sub
+${THIS_SH} ./glob5.sub
+${THIS_SH} ./glob6.sub
+${THIS_SH} ./glob7.sub
+${THIS_SH} ./glob8.sub
+${THIS_SH} ./glob9.sub
+${THIS_SH} ./glob10.sub
 
 MYDIR=$PWD	# save where we are
 
-TESTDIR=/tmp/glob-test
+TESTDIR=$TMPDIR/glob-test-$$
 mkdir $TESTDIR
 builtin cd $TESTDIR || { echo $0: cannot cd to $TESTDIR >&2 ; exit 1; }
 rm -rf *

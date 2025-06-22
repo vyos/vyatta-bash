@@ -1,7 +1,7 @@
 This file is ulimit.def, from which is created ulimit.c.
 It implements the builtin "ulimit" in Bash.
 
-Copyright (C) 1987-2009 Free Software Foundation, Inc.
+Copyright (C) 1987-2021 Free Software Foundation, Inc.
 
 This file is part of GNU Bash, the Bourne Again SHell.
 
@@ -23,7 +23,7 @@ $PRODUCES ulimit.c
 $BUILTIN ulimit
 $FUNCTION ulimit_builtin
 $DEPENDS_ON !_MINIX
-$SHORT_DOC ulimit [-SHacdefilmnpqrstuvx] [limit]
+$SHORT_DOC ulimit [-SHabcdefiklmnpqrstuvxPRT] [limit]
 Modify shell resource limits.
 
 Provides control over the resources available to the shell and processes
@@ -39,6 +39,7 @@ Options:
   -e	the maximum scheduling priority (`nice')
   -f	the maximum size of files written by the shell and its children
   -i	the maximum number of pending signals
+  -k	the maximum number of kqueues allocated for this process
   -l	the maximum size a process may lock into memory
   -m	the maximum resident set size
   -n	the maximum number of open file descriptors
@@ -50,6 +51,11 @@ Options:
   -u	the maximum number of user processes
   -v	the size of virtual memory
   -x	the maximum number of file locks
+  -P	the maximum number of pseudoterminals
+  -R	the maximum time a real-time process can run before blocking
+  -T	the maximum number of threads
+
+Not all options are available on all platforms.
 
 If LIMIT is given, it is the new value of the specified resource; the
 special LIMIT values `soft', `hard', and `unlimited' stand for the
@@ -70,7 +76,7 @@ $END
 #include <config.h>
 
 #include "../bashtypes.h"
-#ifndef _MINIX
+#if defined (HAVE_SYS_PARAM_H)
 #  include <sys/param.h>
 #endif
 
@@ -118,16 +124,26 @@ extern int errno;
 #  undef HAVE_RESOURCE
 #endif
 
+#if !defined (HAVE_RESOURCE) && defined (HAVE_ULIMIT_H)
+#  include <ulimit.h>
+#endif
+
 #if !defined (RLIMTYPE)
 #  define RLIMTYPE long
 #  define string_to_rlimtype(s) strtol(s, (char **)NULL, 10)
 #  define print_rlimtype(num, nl) printf ("%ld%s", num, nl ? "\n" : "")
 #endif
 
+/* Alternate names */
+
 /* Some systems use RLIMIT_NOFILE, others use RLIMIT_OFILE */
 #if defined (HAVE_RESOURCE) && defined (RLIMIT_OFILE) && !defined (RLIMIT_NOFILE)
 #  define RLIMIT_NOFILE RLIMIT_OFILE
 #endif /* HAVE_RESOURCE && RLIMIT_OFILE && !RLIMIT_NOFILE */
+
+#if defined (HAVE_RESOURCE) && defined (RLIMIT_POSIXLOCKS) && !defined (RLIMIT_LOCKS)
+#  define RLIMIT_LOCKS RLIMIT_POSIXLOCKS
+#endif /* HAVE_RESOURCE && RLIMIT_POSIXLOCKS && !RLIMIT_LOCKS */
 
 /* Some systems have these, some do not. */
 #ifdef RLIMIT_FSIZE
@@ -163,6 +179,10 @@ extern int errno;
 #  define RLIMIT_MAXUPROC	260
 #endif
 
+#if !defined (RLIMIT_PTHREAD) && defined (RLIMIT_NTHR)
+#  define RLIMIT_PTHREAD RLIMIT_NTHR
+#endif
+
 #if !defined (RLIM_INFINITY)
 #  define RLIM_INFINITY 0x7fffffff
 #endif
@@ -184,24 +204,22 @@ extern int errno;
 
 #define BLOCKSIZE(x)	(((x) == POSIXBLK) ? (posixly_correct ? 512 : 1024) : (x))
 
-extern int posixly_correct;
+static int _findlim PARAMS((int));
 
-static int _findlim __P((int));
+static int ulimit_internal PARAMS((int, char *, int, int));
 
-static int ulimit_internal __P((int, char *, int, int));
+static int get_limit PARAMS((int, RLIMTYPE *, RLIMTYPE *));
+static int set_limit PARAMS((int, RLIMTYPE, int));
 
-static int get_limit __P((int, RLIMTYPE *, RLIMTYPE *));
-static int set_limit __P((int, RLIMTYPE, int));
+static void printone PARAMS((int, RLIMTYPE, int));
+static void print_all_limits PARAMS((int));
 
-static void printone __P((int, RLIMTYPE, int));
-static void print_all_limits __P((int));
+static int set_all_limits PARAMS((int, RLIMTYPE));
 
-static int set_all_limits __P((int, RLIMTYPE));
-
-static int filesize __P((RLIMTYPE *));
-static int pipesize __P((RLIMTYPE *));
-static int getmaxuprc __P((RLIMTYPE *));
-static int getmaxvm __P((RLIMTYPE *, RLIMTYPE *));
+static int filesize PARAMS((RLIMTYPE *));
+static int pipesize PARAMS((RLIMTYPE *));
+static int getmaxuprc PARAMS((RLIMTYPE *));
+static int getmaxvm PARAMS((RLIMTYPE *, RLIMTYPE *));
 
 typedef struct {
   int  option;			/* The ulimit option for this limit. */
@@ -212,8 +230,14 @@ typedef struct {
 } RESOURCE_LIMITS;
 
 static RESOURCE_LIMITS limits[] = {
+#ifdef RLIMIT_NPTS
+  { 'P',	RLIMIT_NPTS,  1,	"number of pseudoterminals",	(char *)NULL },
+#endif
+#ifdef RLIMIT_RTTIME
+  { 'R',	RLIMIT_RTTIME,  1,	"real-time non-blocking time",	"microseconds" },
+#endif
 #ifdef RLIMIT_PTHREAD
-  { 'T',	RLIMIT_PTHREAD,  1,	"number of threads",	(char *)NULL },
+  { 'T',	RLIMIT_PTHREAD, 1,	"number of threads",	(char *)NULL },
 #endif
 #ifdef RLIMIT_SBSIZE
   { 'b',	RLIMIT_SBSIZE,  1,	"socket buffer size",	"bytes" },
@@ -230,6 +254,9 @@ static RESOURCE_LIMITS limits[] = {
   { 'f',	RLIMIT_FILESIZE, POSIXBLK,	"file size",		"blocks" },
 #ifdef RLIMIT_SIGPENDING
   { 'i',	RLIMIT_SIGPENDING, 1,	"pending signals",	(char *)NULL },
+#endif
+#ifdef RLIMIT_KQUEUES
+  { 'k',	RLIMIT_KQUEUES, 1,	"max kqueues",		(char *)NULL },
 #endif
 #ifdef RLIMIT_MEMLOCK
   { 'l',	RLIMIT_MEMLOCK, 1024,	"max locked memory",	"kbytes" },
@@ -348,6 +375,7 @@ ulimit_builtin (list)
 	  mode |= LIMIT_HARD;
 	  break;
 
+	CASE_HELPOPT;
 	case '?':
 	  builtin_usage ();
 	  return (EX_USAGE);
@@ -398,6 +426,15 @@ ulimit_builtin (list)
 	  builtin_error (_("`%c': bad command"), cmdlist[c].cmd);
 	  return (EX_USAGE);
 	}
+    }
+
+  /* POSIX compatibility. If the last item in cmdlist does not have an option
+     argument, but there is an operand (list != 0), treat the operand as if
+     it were an option argument for that last command. */
+  if (list && list->word && cmdlist[ncmd - 1].arg == 0)
+    {
+      cmdlist[ncmd - 1].arg = list->word->word;
+      list = list->next;
     }
 
   for (c = 0; c < ncmd; c++)
@@ -717,7 +754,7 @@ printone (limind, curlim, pdesc)
       else
         sprintf (unitstr, "(-%c) ", limits[limind].option);
 
-      printf ("%-20s %16s", limits[limind].description, unitstr);
+      printf ("%-20s %20s", limits[limind].description, unitstr);
     }
   if (curlim == RLIM_INFINITY)
     puts ("unlimited");

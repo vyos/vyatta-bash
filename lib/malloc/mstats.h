@@ -1,6 +1,6 @@
 /* mstats.h - definitions for malloc statistics */
 
-/*  Copyright (C) 2001-2003 Free Software Foundation, Inc.
+/*  Copyright (C) 2001-2021 Free Software Foundation, Inc.
 
     This file is part of GNU Bash, the Bourne-Again SHell.
 
@@ -25,8 +25,9 @@
 
 #ifdef MALLOC_STATS
 
+/* This needs to change if the definition in malloc.c changes */
 #ifndef NBUCKETS
-#  define NBUCKETS 30
+#  define NBUCKETS 28
 #endif
 
 /*
@@ -77,6 +78,8 @@ struct _malstats {
   int nsplit[NBUCKETS];
   int tbcoalesce;
   int ncoalesce[NBUCKETS];
+  int nmmap;
+  bits32_t tmmap;
 };
 
 /* Return statistics describing allocation of blocks of size BLOCKSIZE.
@@ -98,12 +101,13 @@ struct bucket_stats {
   int nlesscore;
   int nsplit;
   int ncoalesce;
+  int nmmap;		/* currently unused */
 };
 
-extern struct bucket_stats malloc_bucket_stats __P((int));
-extern struct _malstats malloc_stats __P((void));
-extern void print_malloc_stats __P((char *));
-extern void trace_malloc_stats __P((char *, char *));
+extern struct bucket_stats malloc_bucket_stats PARAMS((int));
+extern struct _malstats malloc_stats PARAMS((void));
+extern void print_malloc_stats PARAMS((char *));
+extern void trace_malloc_stats PARAMS((char *, char *));
 
 #endif /* MALLOC_STATS */
 

@@ -1,6 +1,6 @@
 /* stats.c - malloc statistics */
 
-/*  Copyright (C) 2001-2003 Free Software Foundation, Inc.
+/*  Copyright (C) 2001-2020 Free Software Foundation, Inc.
 
     This file is part of GNU Bash, the Bourne-Again SHell.
 
@@ -34,11 +34,13 @@
 
 #include "mstats.h"
 
-extern int malloc_free_blocks __P((int));
+extern int malloc_free_blocks PARAMS((int));
+
+extern int malloc_mmap_threshold;
 
 extern struct _malstats _mstats;
 
-extern FILE *_imalloc_fopen __P((char *, char *, char *, char *, size_t));
+extern FILE *_imalloc_fopen PARAMS((char *, char *, char *, char *, size_t));
 
 struct bucket_stats
 malloc_bucket_stats (size)
@@ -103,18 +105,24 @@ _print_malloc_stats (s, fp)
   for (i = totused = totfree = 0; i < NBUCKETS; i++)
     {
       v = malloc_bucket_stats (i);
+      /* Show where the mmap threshold is; sizes greater than this use mmap to
+	 allocate and munmap to free (munmap shows up as lesscore). */
+      if (i == malloc_mmap_threshold+1)
+	fprintf (fp, "--------\n");
       if (v.nmal > 0)
-	fprintf (fp, "%8lu\t%4d\t%6d\t%5d\t%8d\t%d %5d %8d\n", (unsigned long)v.blocksize, v.nfree, v.nused, v.nmal, v.nmorecore, v.nlesscore, v.nsplit, v.ncoalesce);
+	fprintf (fp, "%8lu\t%4d\t%6d\t%5d%8d\t%8d %5d %8d\n", (unsigned long)v.blocksize, v.nfree, v.nused, v.nmal, v.nmorecore, v.nlesscore, v.nsplit, v.ncoalesce);
       totfree += v.nfree * v.blocksize;
       totused += v.nused * v.blocksize;
     }
   fprintf (fp, "\nTotal bytes in use: %lu, total bytes free: %lu\n",
 	   totused, totfree);
-  fprintf (fp, "\nTotal bytes requested by application: %lu\n", _mstats.bytesreq);
+  fprintf (fp, "\nTotal bytes requested by application: %lu\n", (unsigned long)_mstats.bytesreq);
   fprintf (fp, "Total mallocs: %d, total frees: %d, total reallocs: %d (%d copies)\n",
 	   _mstats.nmal, _mstats.nfre, _mstats.nrealloc, _mstats.nrcopy);
   fprintf (fp, "Total sbrks: %d, total bytes via sbrk: %d\n",
   	   _mstats.nsbrk, _mstats.tsbrk);
+  fprintf (fp, "Total mmaps: %d, total bytes via mmap: %d\n",
+  	   _mstats.nmmap, _mstats.tmmap);
   fprintf (fp, "Total blocks split: %d, total block coalesces: %d\n",
   	   _mstats.tbsplit, _mstats.tbcoalesce);
 }

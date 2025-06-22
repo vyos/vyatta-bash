@@ -1,7 +1,7 @@
 This file is setattr.def, from which is created setattr.c.
 It implements the builtins "export" and "readonly", in Bash.
 
-Copyright (C) 1987-2009 Free Software Foundation, Inc.
+Copyright (C) 1987-2021 Free Software Foundation, Inc.
 
 This file is part of GNU Bash, the Bourne Again SHell.
 
@@ -34,16 +34,15 @@ $PRODUCES setattr.c
 #include "../bashintl.h"
 
 #include "../shell.h"
+#include "../execute_cmd.h"
+#include "../flags.h"
 #include "common.h"
 #include "bashgetopt.h"
 
-extern int posixly_correct;
-extern int array_needs_making;
-extern char *this_command_name;
 extern sh_builtin_func_t *this_shell_builtin;
 
 #ifdef ARRAY_VARS
-extern int declare_builtin __P((WORD_LIST *));
+extern int declare_builtin PARAMS((WORD_LIST *));
 #endif
 
 #define READONLY_OR_EXPORT \
@@ -82,7 +81,7 @@ export_builtin (list)
 
 $BUILTIN readonly
 $FUNCTION readonly_builtin
-$SHORT_DOC readonly [-af] [name[=value] ...] or readonly -p
+$SHORT_DOC readonly [-aAf] [name[=value] ...] or readonly -p
 Mark shell variables as unchangeable.
 
 Mark each NAME as read-only; the values of these NAMEs may not be
@@ -93,7 +92,8 @@ Options:
   -a	refer to indexed array variables
   -A	refer to associative array variables
   -f	refer to shell functions
-  -p	display a list of all readonly variables and functions
+  -p	display a list of all readonly variables or functions,
+		depending on whether or not the -f option is given
 
 An argument of `--' disables further option processing.
 
@@ -132,6 +132,8 @@ set_or_show_attributes (list, attribute, nodefs)
 #if defined (ARRAY_VARS)
   WORD_LIST *nlist, *tlist;
   WORD_DESC *w;
+  char optw[8];
+  int opti;
 #endif
 
   functions_only = arrays_only = assoc_only = 0;
@@ -158,6 +160,7 @@ set_or_show_attributes (list, attribute, nodefs)
 #endif
 	  case 'p':
 	    break;
+	  CASE_HELPOPT;
 	  default:
 	    builtin_usage ();
 	    return (EX_USAGE);
@@ -184,6 +187,11 @@ set_or_show_attributes (list, attribute, nodefs)
 	      if (var == 0)
 		{
 		  builtin_error (_("%s: not a function"), name);
+		  any_failed++;
+		}
+	      else if ((attribute & att_exported) && undo == 0 && exportable_function_name (name) == 0)
+		{
+		  builtin_error (_("%s: cannot export"), name);
 		  any_failed++;
 		}
 	      else
@@ -230,8 +238,24 @@ set_or_show_attributes (list, attribute, nodefs)
 		{
 		  tlist = list->next;
 		  list->next = (WORD_LIST *)NULL;
-		  w = arrays_only ? make_word ("-ra") : make_word ("-rA");
+		  /* Add -g to avoid readonly/export creating local variables:
+		     only local/declare/typeset create local variables */
+		  opti = 0;
+		  optw[opti++] = '-';
+		  optw[opti++] = 'g';
+		  if (attribute & att_readonly)
+		    optw[opti++] = 'r';
+		  if (attribute & att_exported)
+		    optw[opti++] = 'x';
+		  if (arrays_only)
+		    optw[opti++] = 'a';
+		  else
+		    optw[opti++] = 'A';
+		  optw[opti] = '\0';
+
+		  w = make_word (optw);
 		  nlist = make_word_list (w, list);
+
 		  opt = declare_builtin (nlist);
 		  if (opt != EXECUTION_SUCCESS)
 		    assign_error++;
@@ -253,6 +277,12 @@ set_or_show_attributes (list, attribute, nodefs)
 	    }
 
 	  set_var_attribute (name, attribute, undo);
+	  if (assign)		/* restore word */
+	    {
+	      name[assign] = '=';
+	      if (aflags & ASS_APPEND)
+		name[assign-1] = '+';
+	    }
 	  list = list->next;
 	}
     }
@@ -295,6 +325,12 @@ set_or_show_attributes (list, attribute, nodefs)
 	      else if (assoc_only && assoc_p (var) == 0)
 		continue;
 #endif
+
+	      /* If we imported a variable that's not a valid identifier, don't
+		 show it in any lists. */
+	      if ((var->attributes & (att_invisible|att_imported)) == (att_invisible|att_imported))
+		continue;
+
 	      if ((var->attributes & attribute))
 		{
 		  show_var_attributes (var, READONLY_OR_EXPORT, nodefs);
@@ -327,7 +363,11 @@ show_all_var_attributes (v, nodefs)
 
   for (i = any_failed = 0; var = variable_list[i]; i++)
     {
-      show_var_attributes (var, READONLY_OR_EXPORT, nodefs);
+      /* There is no equivalent `declare -'. */
+      if (variable_context && var->context == variable_context && STREQ (var->name, "-"))
+	printf ("local -\n");
+      else  
+	show_var_attributes (var, READONLY_OR_EXPORT, nodefs);
       if (any_failed = sh_chkwrite (any_failed))
         break;
     }
@@ -335,18 +375,40 @@ show_all_var_attributes (v, nodefs)
   return (any_failed == 0 ? EXECUTION_SUCCESS : EXECUTION_FAILURE);
 }
 
-/* Show the attributes for shell variable VAR.  If NODEFS is non-zero,
-   don't show function definitions along with the name.  If PATTR is
-   non-zero, it indicates we're being called from `export' or `readonly'.
-   In POSIX mode, this prints the name of the calling builtin (`export'
-   or `readonly') instead of `declare', and doesn't print function defs
-   when called by `export' or `readonly'. */
+/* Show all local variable variables with their attributes. This shows unset
+   local variables (all_local_variables called with 0 argument). */
 int
-show_var_attributes (var, pattr, nodefs)
-     SHELL_VAR *var;
-     int pattr, nodefs;
+show_local_var_attributes (v, nodefs)
+     int v, nodefs;
 {
-  char flags[16], *x;
+  SHELL_VAR **variable_list, *var;
+  int any_failed;
+  register int i;
+
+  variable_list = all_local_variables (0);
+  if (variable_list == 0)  
+    return (EXECUTION_SUCCESS);
+
+  for (i = any_failed = 0; var = variable_list[i]; i++)
+    {
+      /* There is no equivalent `declare -'. */
+      if (STREQ (var->name, "-"))
+	printf ("local -\n");
+      else  
+	show_var_attributes (var, READONLY_OR_EXPORT, nodefs);
+      if (any_failed = sh_chkwrite (any_failed))
+        break;
+    }
+  free (variable_list);
+  return (any_failed == 0 ? EXECUTION_SUCCESS : EXECUTION_FAILURE);
+}
+
+int
+var_attribute_string (var, pattr, flags)
+     SHELL_VAR *var;
+     int pattr;
+     char *flags;	/* filled in with attributes */
+{
   int i;
 
   i = 0;
@@ -367,6 +429,9 @@ show_var_attributes (var, pattr, nodefs)
 
       if (integer_p (var))
 	flags[i++] = 'i';
+
+      if (nameref_p (var))
+	flags[i++] = 'n';
 
       if (readonly_p (var))
 	flags[i++] = 'r';
@@ -401,6 +466,24 @@ show_var_attributes (var, pattr, nodefs)
     }
 
   flags[i] = '\0';
+  return i;
+}
+
+/* Show the attributes for shell variable VAR.  If NODEFS is non-zero,
+   don't show function definitions along with the name.  If PATTR is
+   non-zero, it indicates we're being called from `export' or `readonly'.
+   In POSIX mode, this prints the name of the calling builtin (`export'
+   or `readonly') instead of `declare', and doesn't print function defs
+   when called by `export' or `readonly'. */
+int
+show_var_attributes (var, pattr, nodefs)
+     SHELL_VAR *var;
+     int pattr, nodefs;
+{
+  char flags[MAX_ATTRIBUTES], *x;
+  int i;
+
+  i = var_attribute_string (var, pattr, flags);
 
   /* If we're printing functions with definitions, print the function def
      first, then the attributes, instead of printing output that can't be
@@ -421,10 +504,12 @@ show_var_attributes (var, pattr, nodefs)
     printf ("%s ", this_command_name);
 
 #if defined (ARRAY_VARS)
-  if (array_p (var))
-    print_array_assignment (var, 1);
+  if (invisible_p (var) && (array_p (var) || assoc_p (var)))
+    printf ("%s\n", var->name);
+  else if (array_p (var))
+    print_array_assignment (var, 0);
   else if (assoc_p (var))
-    print_assoc_assignment (var, 1);
+    print_assoc_assignment (var, 0);
   else
 #endif
   /* force `readonly' and `export' to not print out function definitions
@@ -433,11 +518,14 @@ show_var_attributes (var, pattr, nodefs)
     printf ("%s\n", var->name);
   else if (function_p (var))
     printf ("%s\n", named_function_string (var->name, function_cell (var), FUNC_MULTILINE|FUNC_EXTERNAL));
-  else if (invisible_p (var))
+  else if (invisible_p (var) || var_isset (var) == 0)
     printf ("%s\n", var->name);
   else
     {
-      x = sh_double_quote (var_isset (var) ? value_cell (var) : "");
+      if (ansic_shouldquote (value_cell (var)))
+	x = ansic_quote (value_cell (var), 0, (int *)0);
+      else
+	x = sh_double_quote (value_cell (var));
       printf ("%s=%s\n", var->name, x);
       free (x);
     }
@@ -451,9 +539,45 @@ show_name_attributes (name, nodefs)
 {
   SHELL_VAR *var;
 
-  var = find_variable_internal (name, 1);
+  var = find_variable_noref (name);
 
-  if (var && invisible_p (var) == 0)
+  if (var)	/* show every variable with attributes, even unset ones */
+    {
+      show_var_attributes (var, READONLY_OR_EXPORT, nodefs);
+      return (0);
+    }
+  else
+    return (1);
+}
+
+int
+show_localname_attributes (name, nodefs)
+     char *name;
+     int nodefs;
+{
+  SHELL_VAR *var;
+
+  var = find_variable_noref (name);
+
+  if (var && local_p (var) && var->context == variable_context)	/* show every variable with attributes, even unset ones */
+    {
+      show_var_attributes (var, READONLY_OR_EXPORT, nodefs);
+      return (0);
+    }
+  else
+    return (1);
+}
+
+int
+show_func_attributes (name, nodefs)
+     char *name;
+     int nodefs;
+{
+  SHELL_VAR *var;
+
+  var = find_function (name);
+
+  if (var)
     {
       show_var_attributes (var, READONLY_OR_EXPORT, nodefs);
       return (0);
@@ -467,7 +591,7 @@ set_var_attribute (name, attribute, undo)
      char *name;
      int attribute, undo;
 {
-  SHELL_VAR *var, *tv;
+  SHELL_VAR *var, *tv, *v, *refvar;
   char *tvalue;
 
   if (undo)
@@ -483,10 +607,31 @@ set_var_attribute (name, attribute, undo)
 	  tvalue = var_isset (tv) ? savestring (value_cell (tv)) : savestring ("");
 
 	  var = bind_variable (tv->name, tvalue, 0);
+	  if (var == 0)
+	    {
+	      free (tvalue);
+	      return;		/* XXX - no error message here */
+	    }
 	  var->attributes |= tv->attributes & ~att_tempvar;
-	  VSETATTR (tv, att_propagate);
-	  if (var->context != 0)
-	    VSETATTR (var, att_propagate);
+	  /* This avoids an error message when propagating a read-only var
+	     later on. */
+	  if (posixly_correct || shell_compatibility_level <= 44)
+	    {
+	      if (var->context == 0 && (attribute & att_readonly))
+		{
+		  /* Don't bother to set the `propagate to the global variables
+		     table' flag if we've just bound the variable in that
+		     table */
+		  v = find_global_variable (tv->name);
+		  if (v != var)
+		    VSETATTR (tv, att_propagate);
+		}
+	      else
+		VSETATTR (tv, att_propagate);
+	      if (var->context != 0)
+		VSETATTR (var, att_propagate);
+	    }
+
 	  SETVARATTR (tv, attribute, undo);	/* XXX */
 
 	  stupidly_hack_special_variables (tv->name);
@@ -495,11 +640,24 @@ set_var_attribute (name, attribute, undo)
 	}
       else
 	{
-	  var = find_variable_internal (name, 0);
+	  var = find_variable_notempenv (name);
+	  if (var == 0)
+	    {
+	      /* We might have a nameref pointing to something that we can't
+		 resolve to a shell variable.  If we do, skip it.  We do a little
+		 checking just so we can print an error message. */
+	      refvar = find_variable_nameref_for_create (name, 0);
+	      if (refvar == INVALID_NAMEREF_VALUE)
+		return;
+	      /* Otherwise we probably have a nameref pointing to a variable
+		 that hasn't been created yet. bind_variable will take care
+		 of that. */
+	    }
 	  if (var == 0)
 	    {
 	      var = bind_variable (name, (char *)NULL, 0);
-	      VSETATTR (var, att_invisible);
+	      if (var)
+		VSETATTR (var, att_invisible);
 	    }
 	  else if (var->context != 0)
 	    VSETATTR (var, att_propagate);

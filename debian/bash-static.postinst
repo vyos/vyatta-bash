@@ -1,9 +1,0 @@
-#! /bin/sh -e
-
-if [ -x /usr/sbin/add-shell ]; then
-    /usr/sbin/add-shell /bin/bash-static
-fi
-
-#DEBHELPER#
-
-exit 0

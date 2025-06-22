@@ -1,4 +1,17 @@
-trap 'rm /tmp/newhistory' 0
+#   This program is free software: you can redistribute it and/or modify
+#   it under the terms of the GNU General Public License as published by
+#   the Free Software Foundation, either version 3 of the License, or
+#   (at your option) any later version.
+#
+#   This program is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty of
+#   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#   GNU General Public License for more details.
+#
+#   You should have received a copy of the GNU General Public License
+#   along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+trap 'rm $TMPDIR/newhistory' 0
 
 # bad options
 history -x
@@ -20,6 +33,7 @@ HISTFILE=history.list
 HISTCONTROL=ignoreboth
 HISTIGNORE='&:history*:fc*'
 HISTSIZE=32
+export HISTIGNORE
 
 shopt -s cmdhist
 set -o history
@@ -39,7 +53,7 @@ history -p '!!'
 
 fc -nl
 
-HISTFILE=/tmp/newhistory
+HISTFILE=$TMPDIR/newhistory
 history -a
 echo displaying \$HISTFILE after history -a
 cat $HISTFILE
@@ -72,6 +86,7 @@ unset HISTFILE
 fc -l 4
 fc -l 4 8
 
+# now an out-of-range error because of the one=two not found in history
 fc -l one=two three=four 502
 
 history 4
@@ -109,5 +124,10 @@ shopt -q -o history
 echo $?
 
 ${THIS_SH} ./history1.sub
+rm -f $TMPDIR/foohist-*
 
 ${THIS_SH} ./history2.sub
+${THIS_SH} ./history3.sub
+${THIS_SH} ./history4.sub
+${THIS_SH} ./history5.sub
+${THIS_SH} ./history6.sub

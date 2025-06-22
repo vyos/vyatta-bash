@@ -1,6 +1,6 @@
 /* shell.h -- The data structures used by the shell */
 
-/* Copyright (C) 1993-2009 Free Software Foundation, Inc.
+/* Copyright (C) 1993-2021 Free Software Foundation, Inc.
 
    This file is part of GNU Bash, the Bourne Again SHell.
 
@@ -55,6 +55,8 @@ extern int EOF_Reached;
 /* Usage messages by builtins result in a return status of 2. */
 #define EX_BADUSAGE	2
 
+#define EX_MISCERROR	2
+
 /* Special exit statuses used by the shell, internally and externally. */
 #define EX_RETRYFAIL	124
 #define EX_WEXPCOMSUB	125
@@ -70,6 +72,7 @@ extern int EOF_Reached;
 #define EX_REDIRFAIL	259	/* redirection failed */
 #define EX_BADASSIGN	260	/* variable assignment error */
 #define EX_EXPFAIL	261	/* word expansion failed */
+#define EX_DISKFALLBACK	262	/* fall back to disk command from builtin */
 
 /* Flag values that control parameter pattern substitution. */
 #define MATCH_ANY	0x000
@@ -80,19 +83,52 @@ extern int EOF_Reached;
 
 #define MATCH_GLOBREP	0x010
 #define MATCH_QUOTED	0x020
-#define MATCH_STARSUB	0x040
+#define MATCH_ASSIGNRHS	0x040
+#define MATCH_STARSUB	0x080
+#define MATCH_EXPREP	0x100	/* for pattern substitution, expand replacement */
 
 /* Some needed external declarations. */
 extern char **shell_environment;
 extern WORD_LIST *rest_of_args;
 
 /* Generalized global variables. */
+extern char *command_execution_string;
+
 extern int debugging_mode;
 extern int executing, login_shell;
 extern int interactive, interactive_shell;
 extern int startup_state;
+extern int reading_shell_script;
+extern int shell_initialized;
+extern int bash_argv_initialized;
 extern int subshell_environment;
+extern int current_command_number;
+extern int indirection_level;
 extern int shell_compatibility_level;
+extern int running_under_emacs;
+
+extern int posixly_correct;
+extern int no_line_editing;
+
+extern char *shell_name;
+extern char *current_host_name;
+
+extern int subshell_argc;
+extern char **subshell_argv;
+extern char **subshell_envp;
+
+/* variables managed using shopt */
+extern int hup_on_exit;
+extern int check_jobs_at_exit;
+extern int autocd;
+extern int check_window_size;
+
+/* from version.c */
+extern int build_version, patch_level;
+extern char *dist_version, *release_status;
+
+extern int locale_mb_cur_max;
+extern int locale_utf8locale;
 
 /* Structure to pass around that holds a bitmap of file descriptors
    to close, and the size of that structure.  Used in execute_cmd.c. */
@@ -125,22 +161,31 @@ extern struct user_info current_user;
 #  define USE_VAR(x)
 #endif
 
+#define HEREDOC_MAX 16
+
 /* Structure in which to save partial parsing state when doing things like
    PROMPT_COMMAND and bash_execute_unix_command execution. */
 
-typedef struct _sh_parser_state_t {
-
+typedef struct _sh_parser_state_t
+{
   /* parsing state */
   int parser_state;
   int *token_state;
 
+  char *token;
+  size_t token_buffer_size;
+  int eof_token;
+
   /* input line state -- line number saved elsewhere */
   int input_line_terminator;
   int eof_encountered;
+  int eol_lookahead;
 
 #if defined (HANDLE_MULTIBYTE)
   /* Nothing right now for multibyte state, but might want something later. */
 #endif
+
+  char **prompt_string_pointer;
 
   /* history state affecting or modified by the parser */
   int current_command_line_count;
@@ -159,9 +204,37 @@ typedef struct _sh_parser_state_t {
   /* flags state affecting the parser */
   int expand_aliases;
   int echo_input_at_read;
-  
+  int need_here_doc;
+  int here_doc_first_line;
+
+  int esacs_needed;
+  int expecting_in;
+
+  /* structures affecting the parser */
+  void *pushed_strings;
+  REDIRECT *redir_stack[HEREDOC_MAX];
 } sh_parser_state_t;
 
+typedef struct _sh_input_line_state_t
+{
+  char *input_line;
+  size_t input_line_index;
+  size_t input_line_size;
+  size_t input_line_len;
+#if defined (HANDLE_MULTIBYTE)
+  char *input_property;
+  size_t input_propsize;
+#endif
+} sh_input_line_state_t;
+
 /* Let's try declaring these here. */
-extern sh_parser_state_t *save_parser_state __P((sh_parser_state_t *));
-extern void restore_parser_state __P((sh_parser_state_t *));
+extern void shell_ungets PARAMS((char *));
+extern void rewind_input_string PARAMS((void));
+
+extern char *parser_remaining_input PARAMS((void));
+
+extern sh_parser_state_t *save_parser_state PARAMS((sh_parser_state_t *));
+extern void restore_parser_state PARAMS((sh_parser_state_t *));
+
+extern sh_input_line_state_t *save_input_line_state PARAMS((sh_input_line_state_t *));
+extern void restore_input_line_state PARAMS((sh_input_line_state_t *));

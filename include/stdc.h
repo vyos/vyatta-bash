@@ -1,7 +1,7 @@
 /* stdc.h -- macros to make source compile on both ANSI C and K&R C
    compilers. */
 
-/* Copyright (C) 1993 Free Software Foundation, Inc.
+/* Copyright (C) 1993-2021 Free Software Foundation, Inc.
 
    This file is part of GNU Bash, the Bourne Again SHell.
 
@@ -26,20 +26,21 @@
 
 /* A function can be defined using prototypes and compile on both ANSI C
    and traditional C compilers with something like this:
-	extern char *func __P((char *, char *, int)); */
+	extern char *func PARAMS((char *, char *, int)); */
 
-#if !defined (__P)
+#if !defined (PARAMS)
 #  if defined (__STDC__) || defined (__GNUC__) || defined (__cplusplus) || defined (PROTOTYPES)
-#    define __P(protos) protos
+#    define PARAMS(protos) protos
 #  else 
-#    define __P(protos) ()
+#    define PARAMS(protos) ()
 #  endif
 #endif
 
+/* Fortify, at least, has trouble with this definition */
 #if defined (HAVE_STRINGIZE)
-#  define __STRING(x) #x
+#  define CPP_STRING(x) #x
 #else
-#  define __STRING(x) "x"
+#  define CPP_STRING(x) "x"
 #endif
 
 #if !defined (__STDC__)

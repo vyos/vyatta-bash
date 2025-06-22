@@ -1,6 +1,6 @@
 /* ufuncs - sleep and alarm functions that understand fractional values */
 
-/* Copyright (C) 2008,2009 Free Software Foundation, Inc.
+/* Copyright (C) 2008,2009-2020 Free Software Foundation, Inc.
 
    This file is part of GNU Bash, the Bourne Again SHell.
 
@@ -22,19 +22,22 @@
 
 #include "bashtypes.h"
 
-#if defined (TIME_WITH_SYS_TIME)
-#  include <sys/time.h>
-#  include <time.h>
-#else
-#  if defined (HAVE_SYS_TIME_H)
-#    include <sys/time.h>
-#  else
-#    include <time.h>
-#  endif
-#endif
+#include "posixtime.h"
 
 #if defined (HAVE_UNISTD_H)
 #include <unistd.h>
+#endif
+
+#include <errno.h>
+#if !defined (errno)
+extern int errno;
+#endif /* !errno */
+
+#if defined (HAVE_SELECT)
+#  include "posixselect.h"
+#  include "quit.h"
+#  include "trap.h"
+#  include "stat-time.h"
 #endif
 
 /* A version of `alarm' using setitimer if it's available. */
@@ -80,17 +83,50 @@ falarm (secs, usecs)
 /* A version of sleep using fractional seconds and select.  I'd like to use
    `usleep', but it's already taken */
 
-#if defined (HAVE_TIMEVAL) && defined (HAVE_SELECT)
+#if defined (HAVE_TIMEVAL) && (defined (HAVE_SELECT) || defined (HAVE_PSELECT))
 int
 fsleep(sec, usec)
      unsigned int sec, usec;
 {
+  int e, r;
+  sigset_t blocked_sigs, prevmask;
+#if defined (HAVE_PSELECT)
+  struct timespec ts;
+#else
   struct timeval tv;
+#endif
 
+  sigemptyset (&blocked_sigs);
+#  if defined (SIGCHLD)
+  sigaddset (&blocked_sigs, SIGCHLD);
+#  endif
+
+#if defined (HAVE_PSELECT)
+  ts.tv_sec = sec;
+  ts.tv_nsec = usec * 1000;
+#else
+  sigemptyset (&prevmask);
   tv.tv_sec = sec;
   tv.tv_usec = usec;
+#endif /* !HAVE_PSELECT */
 
-  return select(0, (fd_set *)0, (fd_set *)0, (fd_set *)0, &tv);
+  do
+    {
+#if defined (HAVE_PSELECT)
+      r = pselect(0, (fd_set *)0, (fd_set *)0, (fd_set *)0, &ts, &blocked_sigs);
+#else
+      sigprocmask (SIG_SETMASK, &blocked_sigs, &prevmask);
+      r = select(0, (fd_set *)0, (fd_set *)0, (fd_set *)0, &tv);
+      sigprocmask (SIG_SETMASK, &prevmask, NULL);
+#endif
+      e = errno;
+      if (r < 0 && errno == EINTR)
+	return -1;		/* caller will handle */
+      errno = e;
+    }
+  while (r < 0 && errno == EINTR);
+
+  return r;
 }
 #else /* !HAVE_TIMEVAL || !HAVE_SELECT */
 int

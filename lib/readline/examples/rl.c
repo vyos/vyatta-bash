@@ -28,6 +28,7 @@
 #  include <config.h>
 #endif
 
+#include <unistd.h>
 #include <stdio.h>
 #include <sys/types.h>
 
@@ -35,6 +36,10 @@
 #  include <stdlib.h>
 #else 
 extern void exit();
+#endif
+
+#ifdef HAVE_LOCALE_H
+#  include <locale.h>
 #endif
 
 #if defined (READLINE_LIBRARY)
@@ -91,6 +96,10 @@ main (argc, argv)
     progname = argv[0];
   else
     progname++;
+
+#ifdef HAVE_SETLOCALE
+  setlocale (LC_ALL, "");
+#endif
 
   /* defaults */
   prompt = "readline$ ";

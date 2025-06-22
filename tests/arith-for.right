@@ -64,11 +64,23 @@ fx ()
 0
 1
 2
-./arith-for.tests: line 77: syntax error: arithmetic expression required
-./arith-for.tests: line 77: syntax error: `(( i=0; "i < 3" ))'
+bash: -c: line 1: syntax error: arithmetic expression required
+bash: -c: line 1: syntax error: `(( i=0; "i < 3" ))'
 2
-./arith-for.tests: line 83: syntax error: `;' unexpected
-./arith-for.tests: line 83: syntax error: `(( i=0; i < 3; i++; 7 ))'
+bash: -c: line 1: syntax error: `;' unexpected
+bash: -c: line 1: syntax error: `(( i=0; i < 3; i++; 7 ))'
 2
 20
 20
+12345678 987654321 012345678 987654321 012345678 987654321 012345678 987654321 012345678 987654321 012345678 
+12345678 987654321 012345678 987654321 012345678 987654321 012345678 987654321 012345678 987654321 012345678 
+4
+3
+2
+1
+0
+4
+3
+2
+1
+0

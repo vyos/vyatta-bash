@@ -3,7 +3,7 @@
 /* This file works under BSD, System V, minix, and Posix systems.  It does
    not implement job control. */
 
-/* Copyright (C) 1987-2009 Free Software Foundation, Inc.
+/* Copyright (C) 1987-2022 Free Software Foundation, Inc.
 
    This file is part of GNU Bash, the Bourne Again SHell.
 
@@ -46,10 +46,12 @@
 #include "shell.h"
 #include "jobs.h"
 #include "execute_cmd.h"
+#include "trap.h"
 
 #include "builtins/builtext.h"	/* for wait_builtin */
+#include "builtins/common.h"
 
-#define DEFAULT_CHILD_MAX 32
+#define DEFAULT_CHILD_MAX 4096
 
 #if defined (_POSIX_VERSION) || !defined (HAVE_KILLPG)
 #  define killpg(pg, sig)		kill(-(pg),(sig))
@@ -72,19 +74,13 @@
 extern int errno;
 #endif /* !errno */
 
-extern int interactive, interactive_shell, login_shell;
-extern int subshell_environment;
-extern int last_command_exit_value, last_command_exit_signal;
-extern int interrupt_immediately;
-extern sh_builtin_func_t *this_shell_builtin;
-#if defined (HAVE_POSIX_SIGNALS)
-extern sigset_t top_level_mask;
-#endif
-extern procenv_t wait_intr_buf;
-extern int wait_signal_received;
+extern void set_original_signal PARAMS((int, SigHandler *));
 
-pid_t last_made_pid = NO_PID;
-pid_t last_asynchronous_pid = NO_PID;
+volatile pid_t last_made_pid = NO_PID;
+volatile pid_t last_asynchronous_pid = NO_PID;
+
+static int queue_sigchld;		/* dummy declaration */
+int waiting_for_child;
 
 /* Call this when you start making children. */
 int already_making_children = 0;
@@ -94,7 +90,12 @@ int shell_tty = -1;
 
 /* If this is non-zero, $LINES and $COLUMNS are reset after every process
    exits from get_tty_state(). */
-int check_window_size;
+int check_window_size = CHECKWINSIZE_DEFAULT;
+
+/* We don't have job control. */
+int job_control = 0;
+
+int running_in_background = 0;	/* can't tell without job control */
 
 /* STATUS and FLAGS are only valid if pid != NO_PID
    STATUS is only valid if (flags & PROC_RUNNING) == 0 */
@@ -120,32 +121,32 @@ static int wait_sigint_received;
 
 static long child_max = -1L;
 
-static void alloc_pid_list __P((void));
-static int find_proc_slot __P((void));
-static int find_index_by_pid __P((pid_t));
-static int find_status_by_pid __P((pid_t));
-static int process_exit_status __P((WAIT));
-static int find_termsig_by_pid __P((pid_t));
-static int get_termsig __P((WAIT));
-static void set_pid_status __P((pid_t, WAIT));
-static void set_pid_flags __P((pid_t, int));
-static void unset_pid_flags __P((pid_t, int));
-static int get_pid_flags __P((pid_t));
-static void add_pid __P((pid_t, int));
-static void mark_dead_jobs_as_notified __P((int));
+static void alloc_pid_list PARAMS((void));
+static int find_proc_slot PARAMS((pid_t));
+static int find_index_by_pid PARAMS((pid_t));
+static int find_status_by_pid PARAMS((pid_t));
+static int process_exit_status PARAMS((WAIT));
+static int find_termsig_by_pid PARAMS((pid_t));
+static int get_termsig PARAMS((WAIT));
+static void set_pid_status PARAMS((pid_t, WAIT));
+static void set_pid_flags PARAMS((pid_t, int));
+static void unset_pid_flags PARAMS((pid_t, int));
+static int get_pid_flags PARAMS((pid_t));
+static void add_pid PARAMS((pid_t, int));
+static void mark_dead_jobs_as_notified PARAMS((int));
 
-static sighandler wait_sigint_handler __P((int));
-static char *j_strsignal __P((int));
+static sighandler wait_sigint_handler PARAMS((int));
+static char *j_strsignal PARAMS((int));
 
 #if defined (HAVE_WAITPID)
-static void reap_zombie_children __P((void));
+static void reap_zombie_children PARAMS((void));
 #endif
 
 #if !defined (HAVE_SIGINTERRUPT) && defined (HAVE_POSIX_SIGNALS)
-static int siginterrupt __P((int, int));
+static int siginterrupt PARAMS((int, int));
 #endif
 
-static void restore_sigint_handler __P((void));
+static void restore_sigint_handler PARAMS((void));
 
 /* Allocate new, or grow existing PID_LIST. */
 static void
@@ -159,18 +160,22 @@ alloc_pid_list ()
 
   /* None of the newly allocated slots have process id's yet. */
   for (i = old; i < pid_list_size; i++)
-    pid_list[i].pid = NO_PID;
+    {
+      pid_list[i].pid = NO_PID;
+      pid_list[i].status = pid_list[i].flags = 0;
+    }
 }
 
 /* Return the offset within the PID_LIST array of an empty slot.  This can
    create new slots if all of the existing slots are taken. */
 static int
-find_proc_slot ()
+find_proc_slot (pid)
+     pid_t pid;
 {
   register int i;
 
   for (i = 0; i < pid_list_size; i++)
-    if (pid_list[i].pid == NO_PID)
+    if (pid_list[i].pid == NO_PID || pid_list[i].pid == pid)
       return (i);
 
   if (i == pid_list_size)
@@ -261,6 +266,12 @@ set_pid_status (pid, status)
   coproc_pidchk (pid, status);
 #endif
 
+#if defined (PROCESS_SUBSTITUTION)
+  if ((slot = find_procsub_child (pid)) >= 0)
+    set_procsub_status (slot, pid, WSTATUS (status));
+    /* XXX - also saving in list below */
+#endif
+
   slot = find_index_by_pid (pid);
   if (slot == NO_PID)
     return;
@@ -326,7 +337,7 @@ add_pid (pid, async)
 {
   int slot;
 
-  slot = find_proc_slot ();
+  slot = find_proc_slot (pid);
 
   pid_list[slot].pid = pid;
   pid_list[slot].status = -1;
@@ -387,8 +398,9 @@ cleanup_dead_jobs ()
 
   for (i = 0; i < pid_list_size; i++)
     {
-      if ((pid_list[i].flags & PROC_RUNNING) == 0 &&
-	  (pid_list[i].flags & PROC_NOTIFIED))
+      if (pid_list[i].pid != NO_PID &&
+	    (pid_list[i].flags & PROC_RUNNING) == 0 &&
+	    (pid_list[i].flags & PROC_NOTIFIED))
 	pid_list[i].pid = NO_PID;
     }
 
@@ -407,6 +419,7 @@ reap_dead_jobs ()
 }
 
 /* Initialize the job control mechanism, and set up the tty stuff. */
+int
 initialize_job_control (force)
      int force;
 {
@@ -414,6 +427,7 @@ initialize_job_control (force)
 
   if (interactive)
     get_tty_state ();
+  return 0;
 }
 
 /* Setup this shell to handle C-C, etc. */
@@ -439,14 +453,21 @@ reap_zombie_children ()
   WAIT status;
 
   CHECK_TERMSIG;
+  CHECK_WAIT_INTR;
   while ((pid = waitpid (-1, (int *)&status, WNOHANG)) > 0)
     set_pid_status (pid, status);
 #  endif /* WNOHANG */
   CHECK_TERMSIG;
+  CHECK_WAIT_INTR;
 }
 #endif /* WAITPID */
 
 #if !defined (HAVE_SIGINTERRUPT) && defined (HAVE_POSIX_SIGNALS)
+
+#if !defined (SA_RESTART)
+#  define SA_RESTART 0
+#endif
+
 static int
 siginterrupt (sig, flag)
      int sig, flag;
@@ -469,17 +490,19 @@ siginterrupt (sig, flag)
    anything else with it.  ASYNC_P says what to do with the tty.  If
    non-zero, then don't give it away. */
 pid_t
-make_child (command, async_p)
+make_child (command, flags)
      char *command;
-     int async_p;
+     int flags;
 {
   pid_t pid;
-  int forksleep;
+  int async_p, forksleep;
+  sigset_t set, oset;
 
   /* Discard saved memory. */
   if (command)
     free (command);
 
+  async_p = (flags & FORK_ASYNC);
   start_pipeline ();
 
 #if defined (BUFFERED_INPUT)
@@ -491,11 +514,23 @@ make_child (command, async_p)
     sync_buffered_stream (default_buffered_input);
 #endif /* BUFFERED_INPUT */
 
+  /* Block SIGTERM here and unblock in child after fork resets the
+     set of pending signals */
+  if (interactive_shell)
+    {
+      sigemptyset (&set);
+      sigaddset (&set, SIGTERM);
+      sigemptyset (&oset);
+      sigprocmask (SIG_BLOCK, &set, &oset);
+      set_signal_handler (SIGTERM, SIG_DFL);
+    }
+
   /* Create the child, handle severe errors.  Retry on EAGAIN. */
   forksleep = 1;
   while ((pid = fork ()) < 0 && errno == EAGAIN && forksleep < FORKSLEEP_MAX)
     {
       sys_error ("fork: retry");
+
 #if defined (HAVE_WAITPID)
       /* Posix systems with a non-blocking waitpid () system call available
 	 get another chance after zombies are reaped. */
@@ -509,9 +544,17 @@ make_child (command, async_p)
       forksleep <<= 1;
     }
 
+  if (pid != 0)
+    if (interactive_shell)
+      {
+	set_signal_handler (SIGTERM, SIG_IGN);
+	sigprocmask (SIG_SETMASK, &oset, (sigset_t *)NULL);
+      }
+
   if (pid < 0)
     {
       sys_error ("fork");
+      last_command_exit_value = EX_NOEXEC;
       throw_to_top_level ();
     }
 
@@ -521,16 +564,18 @@ make_child (command, async_p)
       unset_bash_input (0);
 #endif /* BUFFERED_INPUT */
 
-#if defined (HAVE_POSIX_SIGNALS)
+      CLRINTERRUPT;	/* XXX - children have their own interrupt state */
+
       /* Restore top-level signal mask. */
-      sigprocmask (SIG_SETMASK, &top_level_mask, (sigset_t *)NULL);
-#endif
+      restore_sigmask ();
 
 #if 0
       /* Ignore INT and QUIT in asynchronous children. */
       if (async_p)
 	last_asynchronous_pid = getpid ();
 #endif
+
+      subshell_environment |= SUBSHELL_IGNTRAP;
 
       default_tty_job_signals ();
     }
@@ -562,28 +607,64 @@ void
 default_tty_job_signals ()
 {
 #if defined (SIGTSTP)
-  set_signal_handler (SIGTSTP, SIG_DFL);
-  set_signal_handler (SIGTTIN, SIG_DFL);
-  set_signal_handler (SIGTTOU, SIG_DFL);
+  if (signal_is_trapped (SIGTSTP) == 0 && signal_is_hard_ignored (SIGTSTP))
+    set_signal_handler (SIGTSTP, SIG_IGN);
+  else
+    set_signal_handler (SIGTSTP, SIG_DFL);
+  if (signal_is_trapped (SIGTTIN) == 0 && signal_is_hard_ignored (SIGTTIN))
+    set_signal_handler (SIGTTIN, SIG_IGN);
+  else
+    set_signal_handler (SIGTTIN, SIG_DFL);
+  if (signal_is_trapped (SIGTTOU) == 0 && signal_is_hard_ignored (SIGTTOU))
+    set_signal_handler (SIGTTOU, SIG_IGN);
+  else
+    set_signal_handler (SIGTTOU, SIG_DFL);
 #endif
+}
+
+/* Called once in a parent process. */
+void
+get_original_tty_job_signals ()
+{
+  static int fetched = 0;
+
+  if (fetched == 0)
+    {
+#if defined (SIGTSTP)
+      if (interactive_shell)
+	{
+	  set_original_signal (SIGTSTP, SIG_DFL);
+	  set_original_signal (SIGTTIN, SIG_DFL);
+	  set_original_signal (SIGTTOU, SIG_DFL);
+	}
+      else
+	{
+	  get_original_signal (SIGTSTP);
+	  get_original_signal (SIGTTIN);
+	  get_original_signal (SIGTTOU);
+	}
+#endif
+      fetched = 1;
+    }
 }
 
 /* Wait for a single pid (PID) and return its exit status.  Called by
    the wait builtin. */
 int
-wait_for_single_pid (pid)
+wait_for_single_pid (pid, flags)
      pid_t pid;
+     int flags;
 {
   pid_t got_pid;
   WAIT status;
-  int pstatus, flags;
+  int pstatus;
 
   pstatus = find_status_by_pid (pid);
 
   if (pstatus == PROC_BAD)
     {
       internal_error (_("wait: pid %ld is not a child of this shell"), (long)pid);
-      return (127);
+      return (257);
     }
 
   if (pstatus != PROC_STILL_ALIVE)
@@ -597,6 +678,7 @@ wait_for_single_pid (pid)
   while ((got_pid = WAITPID (pid, &status, 0)) != pid)
     {
       CHECK_TERMSIG;
+      CHECK_WAIT_INTR;
       if (got_pid < 0)
 	{
 	  if (errno != EINTR && errno != ECHILD)
@@ -618,28 +700,45 @@ wait_for_single_pid (pid)
 
   siginterrupt (SIGINT, 0);
   QUIT;
+  CHECK_WAIT_INTR;
 
   return (got_pid > 0 ? process_exit_status (status) : -1);
 }
 
 /* Wait for all of the shell's children to exit.  Called by the `wait'
    builtin. */
-void
-wait_for_background_pids ()
+int
+wait_for_background_pids (ps)
+     struct procstat *ps;
 {
   pid_t got_pid;
   WAIT status;
+  int njobs;
 
   /* If we aren't using job control, we let the kernel take care of the
      bookkeeping for us.  wait () will return -1 and set errno to ECHILD
      when there are no more unwaited-for child processes on both
      4.2 BSD-based and System V-based systems. */
 
+  njobs = 0;
   siginterrupt (SIGINT, 1);
 
   /* Wait for ECHILD */
+  waiting_for_child = 1;
   while ((got_pid = WAITPID (-1, &status, 0)) != -1)
-    set_pid_status (got_pid, status);
+    {
+      waiting_for_child = 0;
+      njobs++;
+      set_pid_status (got_pid, status);
+      if (ps)
+	{
+	  ps->pid = got_pid;
+	  ps->status = process_exit_status (status);
+	}
+      waiting_for_child = 1;
+      CHECK_WAIT_INTR;
+    }
+  waiting_for_child = 0;
 
   if (errno != EINTR && errno != ECHILD)
     {
@@ -649,9 +748,17 @@ wait_for_background_pids ()
 
   siginterrupt (SIGINT, 0);
   QUIT;
+  CHECK_WAIT_INTR;
 
   mark_dead_jobs_as_notified (1);
   cleanup_dead_jobs ();
+
+  return njobs;
+}
+
+void
+wait_sigint_cleanup ()
+{
 }
 
 /* Make OLD_SIGINT_HANDLER the SIGINT signal handler. */
@@ -683,20 +790,11 @@ wait_sigint_handler (sig)
       signal_is_trapped (SIGINT) &&
       ((sigint_handler = trap_to_sighandler (SIGINT)) == trap_handler))
     {
-      last_command_exit_value = EXECUTION_FAILURE;
+      last_command_exit_value = 128+SIGINT;
       restore_sigint_handler ();
-      interrupt_immediately = 0;
       trap_handler (SIGINT);	/* set pending_traps[SIGINT] */
       wait_signal_received = SIGINT;
-      longjmp (wait_intr_buf, 1);
-    }
-
-  if (interrupt_immediately)
-    {
-      last_command_exit_value = EXECUTION_FAILURE;
-      restore_sigint_handler ();
-      ADDINTERRUPT;
-      QUIT;
+      SIGRETURN (0);
     }
 
   wait_sigint_received = 1;
@@ -723,8 +821,9 @@ j_strsignal (s)
 /* Wait for pid (one of our children) to terminate.  This is called only
    by the execution code in execute_cmd.c. */
 int
-wait_for (pid)
+wait_for (pid, flags)
      pid_t pid;
+     int flags;
 {
   int return_val, pstatus;
   pid_t got_pid;
@@ -748,9 +847,13 @@ wait_for (pid)
   if (interactive_shell == 0)
     old_sigint_handler = set_signal_handler (SIGINT, wait_sigint_handler);
 
+  waiting_for_child = 1;  
+  CHECK_WAIT_INTR;
   while ((got_pid = WAITPID (-1, &status, 0)) != pid) /* XXX was pid now -1 */
     {
+      waiting_for_child = 0;
       CHECK_TERMSIG;
+      CHECK_WAIT_INTR;
       if (got_pid < 0 && errno == ECHILD)
 	{
 #if !defined (_POSIX_VERSION)
@@ -764,7 +867,9 @@ wait_for (pid)
 	programming_error ("wait_for(%ld): %s", (long)pid, strerror(errno));
       else if (got_pid > 0)
 	set_pid_status (got_pid, status);
+      waiting_for_child = 1;
     }
+  waiting_for_child = 0;
 
   if (got_pid > 0)
     set_pid_status (got_pid, status);
@@ -773,6 +878,9 @@ wait_for (pid)
   if (got_pid >= 0)
     reap_zombie_children ();
 #endif /* HAVE_WAITPID */
+
+  CHECK_TERMSIG;
+  CHECK_WAIT_INTR;
 
   if (interactive_shell == 0)
     {
@@ -801,13 +909,17 @@ wait_for (pid)
   return_val = process_exit_status (status);
   last_command_exit_signal = get_termsig (status);
 
-#if !defined (DONT_REPORT_SIGPIPE)
-  if ((WIFSTOPPED (status) == 0) && WIFSIGNALED (status) &&
-	(WTERMSIG (status) != SIGINT))
+#if defined (DONT_REPORT_SIGPIPE) && defined (DONT_REPORT_SIGTERM)
+#  define REPORTSIG(x) ((x) != SIGINT && (x) != SIGPIPE && (x) != SIGTERM)
+#elif !defined (DONT_REPORT_SIGPIPE) && !defined (DONT_REPORT_SIGTERM)
+#  define REPORTSIG(x) ((x) != SIGINT)
+#elif defined (DONT_REPORT_SIGPIPE)
+#  define REPORTSIG(x) ((x) != SIGINT && (x) != SIGPIPE)
 #else
-  if ((WIFSTOPPED (status) == 0) && WIFSIGNALED (status) &&
-	(WTERMSIG (status) != SIGINT) && (WTERMSIG (status) != SIGPIPE))
+#  define REPORTSIG(x) ((x) != SIGINT && (x) != SIGTERM)
 #endif
+
+  if ((WIFSTOPPED (status) == 0) && WIFSIGNALED (status) && REPORTSIG(WTERMSIG (status)))
     {
       fprintf (stderr, "%s", j_strsignal (WTERMSIG (status)));
       if (WIFCORED (status))
@@ -822,6 +934,8 @@ wait_for (pid)
       else
 	get_tty_state ();
     }
+  else if (interactive_shell == 0 && subshell_environment == 0 && check_window_size)
+    get_new_window_size (0, (int *)0, (int *)0);
 
   return (return_val);
 }
@@ -848,6 +962,7 @@ static TTYSTRUCT shell_tty_info;
 static int got_tty_state;
 
 /* Fill the contents of shell_tty_info with the current tty info. */
+int
 get_tty_state ()
 {
   int tty;
@@ -860,6 +975,7 @@ get_tty_state ()
       if (check_window_size)
 	get_new_window_size (0, (int *)0, (int *)0);
     }
+  return 0;
 }
 
 /* Make the current tty use the state in shell_tty_info. */
@@ -879,10 +995,12 @@ set_tty_state ()
 }
 
 /* Give the terminal to PGRP.  */
+int
 give_terminal_to (pgrp, force)
      pid_t pgrp;
      int force;
 {
+  return 0;
 }
 
 /* Stop a pipeline. */
@@ -907,10 +1025,19 @@ stop_making_children ()
   already_making_children = 0;
 }
 
+/* The name is kind of a misnomer, but it's what the job control code uses. */
+void
+without_job_control ()
+{
+  stop_making_children ();
+  last_made_pid = NO_PID;	/* XXX */
+}
+
 int
-get_job_by_pid (pid, block)
+get_job_by_pid (pid, block, ignore)
      pid_t pid;
      int block;
+     PROCESS **ignore;
 {
   int i;
 
@@ -926,8 +1053,20 @@ describe_pid (pid)
   fprintf (stderr, "%ld\n", (long) pid);
 }
 
+int
+freeze_jobs_list ()
+{
+  return 0;
+}
+
 void
 unfreeze_jobs_list ()
+{
+}
+
+void
+set_jobs_list_frozen (s)
+     int s;
 {
 }
 

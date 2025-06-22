@@ -1,6 +1,6 @@
 /* pcomplib.c - library functions for programmable completion. */
 
-/* Copyright (C) 1999-2009 Free Software Foundation, Inc.
+/* Copyright (C) 1999-2021 Free Software Foundation, Inc.
 
    This file is part of GNU Bash, the Bourne Again SHell.
 
@@ -37,13 +37,13 @@
 #include "shell.h"
 #include "pcomplete.h"
 
-#define COMPLETE_HASH_BUCKETS	32	/* must be power of two */
+#define COMPLETE_HASH_BUCKETS	512	/* must be power of two */
 
 #define STRDUP(x)	((x) ? savestring (x) : (char *)NULL)
 
 HASH_TABLE *prog_completes = (HASH_TABLE *)NULL;
 
-static void free_progcomp __P((PTR_T));
+static void free_progcomp PARAMS((PTR_T));
 
 COMPSPEC *
 compspec_create ()
@@ -62,6 +62,7 @@ compspec_create ()
   ret->suffix = (char *)NULL;
   ret->funcname = (char *)NULL;
   ret->command = (char *)NULL;
+  ret->lcommand = (char *)NULL;
   ret->filterpat = (char *)NULL;
 
   return ret;
@@ -80,6 +81,7 @@ compspec_dispose (cs)
       FREE (cs->suffix);
       FREE (cs->funcname);
       FREE (cs->command);
+      FREE (cs->lcommand);
       FREE (cs->filterpat);
 
       free (cs);
@@ -94,7 +96,7 @@ compspec_copy (cs)
 
   new = (COMPSPEC *)xmalloc (sizeof (COMPSPEC));
 
-  new->refcount = cs->refcount;
+  new->refcount = 1; 	/* was cs->refcount, but this is a fresh copy */
   new->actions = cs->actions;
   new->options = cs->options;
 
@@ -104,6 +106,7 @@ compspec_copy (cs)
   new->suffix = STRDUP (cs->suffix);
   new->funcname = STRDUP (cs->funcname);
   new->command = STRDUP (cs->command);
+  new->lcommand = STRDUP (cs->lcommand);
   new->filterpat = STRDUP (cs->filterpat);
 
   return new;

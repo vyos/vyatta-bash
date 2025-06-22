@@ -1,3 +1,16 @@
+#   This program is free software: you can redistribute it and/or modify
+#   it under the terms of the GNU General Public License as published by
+#   the Free Software Foundation, either version 3 of the License, or
+#   (at your option) any later version.
+#
+#   This program is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty of
+#   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#   GNU General Public License for more details.
+#
+#   You should have received a copy of the GNU General Public License
+#   along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
 : ${TMPDIR:=/tmp}
 
 export LC_ALL=C
@@ -56,6 +69,9 @@ exec 6<>$TMPDIR/bash-c
 echo to c 1>&6
 cat $TMPDIR/bash-c
 echo "Point 5"
+
+# clean up before running scripts
+exec 4>&- 5>&- 6<&-
 
 rm -f $TMPDIR/bash-a $TMPDIR/bash-b $TMPDIR/bash-c
 
@@ -187,3 +203,7 @@ exec 2>&9
 exec 9>&-
 
 ${THIS_SH} ./redir9.sub
+
+${THIS_SH} ./redir10.sub
+
+${THIS_SH} ./redir11.sub

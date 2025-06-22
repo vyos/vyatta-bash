@@ -4,7 +4,7 @@
  */
 
 /*
-   Copyright (C) 1999-2009 Free Software Foundation, Inc.
+   Copyright (C) 1999-2020 Free Software Foundation, Inc.
 
    This file is part of GNU Bash.
    Bash is free software: you can redistribute it and/or modify
@@ -35,7 +35,7 @@
 extern int errno;
 #endif
 
-extern int dollar_dollar_pid;
+extern pid_t dollar_dollar_pid;
 extern int last_command_exit_value;
 
 int
@@ -51,6 +51,7 @@ push_builtin (list)
     {
       switch (opt)
 	{
+	CASE_HELPOPT;
 	default:
 	  builtin_usage ();
 	  return (EX_USAGE);
@@ -91,7 +92,7 @@ push_builtin (list)
   else
     {
       stop_pipeline (0, (COMMAND *)NULL);
-      xstatus = wait_for (pid);
+      xstatus = wait_for (pid, 0);
       return (xstatus);
     }   
 }

@@ -1,7 +1,7 @@
 This file is echo.def, from which is created echo.c.
 It implements the builtin "echo" in Bash.
 
-Copyright (C) 1987-2009 Free Software Foundation, Inc.
+Copyright (C) 1987-2018 Free Software Foundation, Inc.
 
 This file is part of GNU Bash, the Bourne Again SHell.
 
@@ -38,7 +38,8 @@ $DEPENDS_ON V9_ECHO
 $SHORT_DOC echo [-neE] [arg ...]
 Write arguments to the standard output.
 
-Display the ARGs on the standard output followed by a newline.
+Display the ARGs, separated by a single space character and followed by a
+newline, on the standard output.
 
 Options:
   -n	do not append a newline
@@ -50,6 +51,7 @@ Options:
   \b	backspace
   \c	suppress further output
   \e	escape character
+  \E	escape character
   \f	form feed
   \n	new line
   \r	carriage return
@@ -57,9 +59,13 @@ Options:
   \v	vertical tab
   \\	backslash
   \0nnn	the character whose ASCII code is NNN (octal).  NNN can be
-	0 to 3 octal digits
+		0 to 3 octal digits
   \xHH	the eight-bit character whose value is HH (hexadecimal).  HH
-	can be one or two hex digits
+		can be one or two hex digits
+  \uHHHH	the Unicode character whose value is the hexadecimal value HHHH.
+		HHHH can be one to four hex digits.
+  \UHHHHHHHH the Unicode character whose value is the hexadecimal value
+		HHHHHHHH. HHHHHHHH can be one to eight hex digits.
 
 Exit Status:
 Returns success unless a write error occurs.
@@ -96,8 +102,6 @@ int xpg_echo = 1;
 #else
 int xpg_echo = 0;
 #endif /* DEFAULT_ECHO_TO_XPG */
-
-extern int posixly_correct;
 
 /* Print the words in LIST to standard output.  If the first word is
    `-n', then don't print a trailing newline.  We also support the
@@ -159,7 +163,6 @@ just_echo:
 
   clearerr (stdout);	/* clear error before writing and testing success */
 
-  terminate_immediately++;
   while (list)
     {
       i = len = 0;
@@ -178,6 +181,7 @@ just_echo:
 	  fflush (stdout);	/* Fix for bug in SunOS 5.5 printf(3) */
 #endif
 	}
+      QUIT;
       if (do_v9 && temp)
 	free (temp);
       list = list->next;
@@ -188,11 +192,11 @@ just_echo:
 	}
       if (list)
 	putchar(' ');
+      QUIT;
     }
 
   if (display_return)
     putchar ('\n');
 
-  terminate_immediately--;
   return (sh_chkwrite (EXECUTION_SUCCESS));
 }

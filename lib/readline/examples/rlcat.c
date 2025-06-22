@@ -45,6 +45,10 @@
 extern void exit();
 #endif
 
+#ifdef HAVE_LOCALE_H
+#  include <locale.h>
+#endif
+
 #ifndef errno
 extern int errno;
 #endif
@@ -78,6 +82,10 @@ main (argc, argv)
 {
   char *temp;
   int opt, Vflag, Nflag;
+
+#ifdef HAVE_SETLOCALE
+  setlocale (LC_ALL, ""):
+#endif
 
   progname = strrchr(argv[0], '/');
   if (progname == 0)
@@ -137,7 +145,7 @@ fcopy(fp)
       if (vflag && isascii ((unsigned char)c) && isprint((unsigned char)c) == 0)
 	{
 	  x = rl_untranslate_keyseq (c);
-	  if (fputs (x, stdout) != 0)
+	  if (fputs (x, stdout) == EOF)
 	    return 1;
 	}
       else if (putchar (c) == EOF)

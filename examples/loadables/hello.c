@@ -3,6 +3,24 @@
 
 /* See Makefile for compilation details. */
 
+/*
+   Copyright (C) 1999-2009 Free Software Foundation, Inc.
+
+   This file is part of GNU Bash.
+   Bash is free software: you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation, either version 3 of the License, or
+   (at your option) any later version.
+
+   Bash is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with Bash.  If not, see <http://www.gnu.org/licenses/>.
+*/
+
 #include <config.h>
 
 #if defined (HAVE_UNISTD_H)
@@ -11,9 +29,7 @@
 
 #include <stdio.h>
 
-#include "builtins.h"
-#include "shell.h"
-#include "bashgetopt.h"
+#include "loadables.h"
 
 /* A builtin `xxx' is normally implemented with an `xxx_builtin' function.
    If you're converting a command that uses the normal Unix argc/argv
@@ -40,6 +56,23 @@ hello_builtin (list)
   return (EXECUTION_SUCCESS);
 }
 
+int
+hello_builtin_load (s)
+     char *s;
+{
+  printf ("hello builtin loaded\n");
+  fflush (stdout);
+  return (1);
+}
+
+void
+hello_builtin_unload (s)
+     char *s;
+{
+  printf ("hello builtin unloaded\n");
+  fflush (stdout);
+}
+
 /* An array of strings forming the `long' documentation for a builtin xxx,
    which is printed by `help xxx'.  It must end with a NULL.  By convention,
    the first line is a short description. */
@@ -61,4 +94,3 @@ struct builtin hello_struct = {
 	"hello",		/* usage synopsis; becomes short_doc */
 	0			/* reserved for internal use */
 };
-	

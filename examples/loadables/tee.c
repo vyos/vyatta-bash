@@ -3,7 +3,7 @@
 /* See Makefile for compilation details. */
 
 /*
-   Copyright (C) 1999-2009 Free Software Foundation, Inc.
+   Copyright (C) 1999-2021 Free Software Foundation, Inc.
 
    This file is part of GNU Bash.
    Bash is free software: you can redistribute it and/or modify
@@ -60,6 +60,7 @@ extern int interrupt_immediately;
 
 extern char *strerror ();
 
+int
 tee_builtin (list)
      WORD_LIST *list;
 {
@@ -83,6 +84,7 @@ tee_builtin (list)
 	case 'i':
 	  nointr = 1;
 	  break;
+	CASE_HELPOPT;
 	default:
 	  builtin_usage ();
 	  return (EX_USAGE);
@@ -119,6 +121,7 @@ tee_builtin (list)
           fl = fl->next;
           fl->next = (FLIST *)NULL;
         }
+      QUIT;
     }
 
   while ((nr = read(0, buf, TEE_BUFSIZE)) > 0)
@@ -135,6 +138,7 @@ tee_builtin (list)
 		break;
 	      }
             bp += nw;
+            QUIT;
 	  }
 	while (n -= nw);
       }
@@ -154,7 +158,8 @@ tee_builtin (list)
       tee_flist = tee_flist->next;
       free (fl);
     }
-  
+
+  QUIT;  
   return (rval);
 }
 
@@ -162,7 +167,7 @@ char *tee_doc[] = {
 	"Duplicate standard output.",
 	"",
 	"Copy standard input to standard output, making a copy in each",
-	"filename argument.  If the `-a' option is gived, the specified",
+	"filename argument.  If the `-a' option is given, the specified",
 	"files are appended to, otherwise they are overwritten.  If the",
 	"`-i' option is supplied, tee ignores interrupts.",
 	(char *)NULL

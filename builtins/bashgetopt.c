@@ -1,6 +1,6 @@
 /* bashgetopt.c -- `getopt' for use by the builtins. */
 
-/* Copyright (C) 1992-2002 Free Software Foundation, Inc.
+/* Copyright (C) 1992-2021 Free Software Foundation, Inc.
 
    This file is part of GNU Bash, the Bourne Again SHell.
 
@@ -31,12 +31,15 @@
 #include "../shell.h"
 #include "common.h"
 
+#include "bashgetopt.h"
+
 #define ISOPT(s)	(((*(s) == '-') || (plus && *(s) == '+')) && (s)[1])
 #define NOTOPT(s)	(((*(s) != '-') && (!plus || *(s) != '+')) || (s)[1] == '\0')
 			
 static int	sp;
 
 char    *list_optarg;
+int	list_optflags;
 int	list_optopt;
 int	list_opttype;
 
@@ -60,6 +63,7 @@ char		*opts;
 
 	if (list == 0) {
 		list_optarg = (char *)NULL;
+		list_optflags = 0;
 		loptend = (WORD_LIST *)NULL;	/* No non-option arguments */
 		return -1;
 	}
@@ -76,6 +80,10 @@ char		*opts;
 		    	lhead = (WORD_LIST *)NULL;
 		    	loptend = lcurrent;
 			return(-1);
+		} else if (ISHELP (lcurrent->word->word)) {
+			lhead = (WORD_LIST *)NULL;
+			loptend = lcurrent;
+			return (GETOPT_HELP);
 		} else if (lcurrent->word->word[0] == '-' &&
 			   lcurrent->word->word[1] == '-' &&
 			   lcurrent->word->word[2] == 0) {
@@ -96,6 +104,7 @@ char		*opts;
 			sp = 1;
 		}
 		list_optarg = NULL;
+		list_optflags = 0;
 		if (lcurrent)
 			loptend = lcurrent->next;
 		return('?');
@@ -107,6 +116,7 @@ char		*opts;
 		/* We allow -l2 as equivalent to -l 2 */
 		if (lcurrent->word->word[sp+1]) {
 			list_optarg = lcurrent->word->word + sp + 1;
+			list_optflags = 0;
 			lcurrent = lcurrent->next;
 		/* If the specifier is `;', don't set optarg if the next
 		   argument looks like another option. */
@@ -117,15 +127,18 @@ char		*opts;
 #endif
 			lcurrent = lcurrent->next;
 			list_optarg = lcurrent->word->word;
+			list_optflags = lcurrent->word->flags;
 			lcurrent = lcurrent->next;
 		} else if (*cp == ';') {
 			list_optarg = (char *)NULL;
+			list_optflags = 0;
 			lcurrent = lcurrent->next;
 		} else {	/* lcurrent->next == NULL */
 			errstr[1] = c;
 			sh_needarg (errstr);
 			sp = 1;
 			list_optarg = (char *)NULL;
+			list_optflags = 0;
 			return('?');
 		}
 		sp = 1;
@@ -134,19 +147,24 @@ char		*opts;
 		if (lcurrent->word->word[sp+1]) {
 			if (DIGIT(lcurrent->word->word[sp+1])) {
 				list_optarg = lcurrent->word->word + sp + 1;
+				list_optflags = 0;
 				lcurrent = lcurrent->next;
-			} else
+			} else {
 				list_optarg = (char *)NULL;
+				list_optflags = 0;
+			}
 		} else {
 			if (lcurrent->next && legal_number(lcurrent->next->word->word, (intmax_t *)0)) {
 				lcurrent = lcurrent->next;
 				list_optarg = lcurrent->word->word;
+				list_optflags = lcurrent->word->flags;
 				lcurrent = lcurrent->next;
 			} else {
 				errstr[1] = c;
 				sh_neednumarg (errstr);
 				sp = 1;
 				list_optarg = (char *)NULL;
+				list_optflags = 0;
 				return ('?');
 			}
 		}
@@ -158,6 +176,7 @@ char		*opts;
 			lcurrent = lcurrent->next;
 		}
 		list_optarg = (char *)NULL;
+		list_optflags = 0;
 	}
 
 	return(c);

@@ -1,6 +1,6 @@
 /* signames.c -- Create an array of signal names. */
 
-/* Copyright (C) 2006 Free Software Foundation, Inc.
+/* Copyright (C) 2006-2021 Free Software Foundation, Inc.
 
    This file is part of GNU Bash, the Bourne Again SHell.
 
@@ -84,9 +84,9 @@ initialize_signames ()
      names first.  This allows (for example) SIGABRT to overwrite SIGLOST. */
 
   /* POSIX 1003.1b-1993 real time signals, but take care of incomplete
-     implementations. Acoording to the standard, both, SIGRTMIN and
-     SIGRTMAX must be defined, SIGRTMIN must be stricly less than
-     SIGRTMAX, and the difference must be at least 7, that is, there
+     implementations. According to the standard, both SIGRTMIN and
+     SIGRTMAX must be defined, SIGRTMIN must be strictly less than
+     SIGRTMAX, and the difference must be at least 7; that is, there
      must be at least eight distinct real time signals. */
 
   /* The generated signal names are SIGRTMIN, SIGRTMIN+1, ...,
@@ -159,8 +159,16 @@ initialize_signames ()
   signal_names[SIGPRE] = "SIGPRE";
 #endif
 
+#if defined (SIGPHONE)	/* Phone interrupt */
+  signal_names[SIGPHONE] = "SIGPHONE";
+#endif
+
 #if defined (SIGVIRT)	/* AIX virtual time alarm */
   signal_names[SIGVIRT] = "SIGVIRT";
+#endif
+
+#if defined (SIGTINT)	/* Interrupt */
+  signal_names[SIGTINT] = "SIGTINT";
 #endif
 
 #if defined (SIGALRM1)	/* m:n condition variables */
@@ -191,25 +199,70 @@ initialize_signames ()
   signal_names[SIGSAK] = "SIGSAK";
 #endif
 
+#if defined (SIGCPUFAIL)	/* Predictive processor deconfiguration */
+  signal_names[SIGCPUFAIL] = "SIGCPUFAIL";
+#endif
+
+#if defined (SIGAIO)	/* Asynchronous I/O */
+  signal_names[SIGAIO] = "SIGAIO";
+#endif
+
+#if defined (SIGLAB)	/* Security label changed */
+  signal_names[SIGLAB] = "SIGLAB";
+#endif
+
 /* SunOS5 */
-#if defined (SIGLWP)	/* special signal used by thread library */
+#if defined (SIGLWP)	/* Solaris: special signal used by thread library */
   signal_names[SIGLWP] = "SIGLWP";
 #endif
 
-#if defined (SIGFREEZE)	/* special signal used by CPR */
+#if defined (SIGFREEZE)	/* Solaris: special signal used by CPR */
   signal_names[SIGFREEZE] = "SIGFREEZE";
 #endif
 
-#if defined (SIGTHAW)	/* special signal used by CPR */
+#if defined (SIGTHAW)	/* Solaris: special signal used by CPR */
   signal_names[SIGTHAW] = "SIGTHAW";
 #endif
 
-#if defined (SIGCANCEL)	/* thread cancellation signal used by libthread */
+#if defined (SIGCANCEL)	/* Solaris: thread cancellation signal used by libthread */
   signal_names[SIGCANCEL] = "SIGCANCEL";
 #endif
 
-#if defined (SIGXRES)	/* resource control exceeded */
+#if defined (SIGXRES)	/* Solaris: resource control exceeded */
   signal_names[SIGXRES] = "SIGXRES";
+#endif
+
+#if defined (SIGJVM1)	/* Solaris: Java Virtual Machine 1 */
+  signal_names[SIGJVM1] = "SIGJVM1";
+#endif
+
+#if defined (SIGJVM2)	/* Solaris: Java Virtual Machine 2 */
+  signal_names[SIGJVM2] = "SIGJVM2";
+#endif
+
+#if defined (SIGDGTIMER1)
+  signal_names[SIGDGTIMER1] = "SIGDGTIMER1";
+#endif
+
+#if defined (SIGDGTIMER2)
+  signal_names[SIGDGTIMER2] = "SIGDGTIMER2";
+#endif
+
+#if defined (SIGDGTIMER3)
+  signal_names[SIGDGTIMER3] = "SIGDGTIMER3";
+#endif
+
+#if defined (SIGDGTIMER4)
+  signal_names[SIGDGTIMER4] = "SIGDGTIMER4";
+#endif
+
+#if defined (SIGDGNOTIFY)
+  signal_names[SIGDGNOTIFY] = "SIGDGNOTIFY";
+#endif
+
+/* Apollo */
+#if defined (SIGAPOLLO)
+  signal_names[SIGAPOLLO] = "SIGAPOLLO";
 #endif
 
 /* HP-UX */

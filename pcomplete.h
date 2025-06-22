@@ -1,7 +1,7 @@
 /* pcomplete.h - structure definitions and other stuff for programmable
 		 completion. */
 
-/* Copyright (C) 1999-2009 Free Software Foundation, Inc.
+/* Copyright (C) 1999-2020 Free Software Foundation, Inc.
 
    This file is part of GNU Bash, the Bourne Again SHell.
 
@@ -35,6 +35,7 @@ typedef struct compspec {
   char *suffix;
   char *funcname;
   char *command;
+  char *lcommand;
   char *filterpat;
 } COMPSPEC;
 
@@ -70,15 +71,23 @@ typedef struct compspec {
 #define COPT_DEFAULT	(1<<1)
 #define COPT_FILENAMES	(1<<2)
 #define COPT_DIRNAMES	(1<<3)
-#define COPT_NOSPACE	(1<<4)
-#define COPT_BASHDEFAULT (1<<5)
-#define COPT_PLUSDIRS	(1<<6)
+#define COPT_NOQUOTE	(1<<4)
+#define COPT_NOSPACE	(1<<5)
+#define COPT_BASHDEFAULT (1<<6)
+#define COPT_PLUSDIRS	(1<<7)
+#define COPT_NOSORT	(1<<8)
+
+#define COPT_LASTUSER	COPT_NOSORT
+
+#define PCOMP_RETRYFAIL (COPT_LASTUSER << 1)
+#define PCOMP_NOTFOUND	(COPT_LASTUSER << 2)
+
 
 /* List of items is used by the code that implements the programmable
    completions. */
 typedef struct _list_of_items {
   int flags;
-  int (*list_getter) __P((struct _list_of_items *));	/* function to call to get the list */
+  int (*list_getter) PARAMS((struct _list_of_items *));	/* function to call to get the list */
 
   STRINGLIST *slist;
 
@@ -98,9 +107,15 @@ typedef struct _list_of_items {
 
 #define EMPTYCMD	"_EmptycmD_"
 #define DEFAULTCMD	"_DefaultCmD_"
+#define INITIALWORD	"_InitialWorD_"
 
 extern HASH_TABLE *prog_completes;
+
+extern char *pcomp_line;
+extern int pcomp_ind;
+
 extern int prog_completion_enabled;
+extern int progcomp_alias;
 
 /* Not all of these are used yet. */
 extern ITEMLIST it_aliases;
@@ -115,6 +130,7 @@ extern ITEMLIST it_exports;
 extern ITEMLIST it_files;
 extern ITEMLIST it_functions;
 extern ITEMLIST it_groups;
+extern ITEMLIST it_helptopics;
 extern ITEMLIST it_hostnames;
 extern ITEMLIST it_jobs;
 extern ITEMLIST it_keywords;
@@ -131,31 +147,31 @@ extern COMPSPEC *pcomp_curcs;
 extern const char *pcomp_curcmd;
 
 /* Functions from pcomplib.c */
-extern COMPSPEC *compspec_create __P((void));
-extern void compspec_dispose __P((COMPSPEC *));
-extern COMPSPEC *compspec_copy __P((COMPSPEC *));
+extern COMPSPEC *compspec_create PARAMS((void));
+extern void compspec_dispose PARAMS((COMPSPEC *));
+extern COMPSPEC *compspec_copy PARAMS((COMPSPEC *));
 
-extern void progcomp_create __P((void));
-extern void progcomp_flush __P((void));
-extern void progcomp_dispose __P((void));
+extern void progcomp_create PARAMS((void));
+extern void progcomp_flush PARAMS((void));
+extern void progcomp_dispose PARAMS((void));
 
-extern int progcomp_size __P((void));
+extern int progcomp_size PARAMS((void));
 
-extern int progcomp_insert __P((char *, COMPSPEC *));
-extern int progcomp_remove __P((char *));
+extern int progcomp_insert PARAMS((char *, COMPSPEC *));
+extern int progcomp_remove PARAMS((char *));
 
-extern COMPSPEC *progcomp_search __P((const char *));
+extern COMPSPEC *progcomp_search PARAMS((const char *));
 
-extern void progcomp_walk __P((hash_wfunc *));
+extern void progcomp_walk PARAMS((hash_wfunc *));
 
 /* Functions from pcomplete.c */
-extern void set_itemlist_dirty __P((ITEMLIST *));
+extern void set_itemlist_dirty PARAMS((ITEMLIST *));
 
-extern STRINGLIST *completions_to_stringlist __P((char **));
+extern STRINGLIST *completions_to_stringlist PARAMS((char **));
 
-extern STRINGLIST *gen_compspec_completions __P((COMPSPEC *, const char *, const char *, int, int, int *));
-extern char **programmable_completions __P((const char *, const char *, int, int, int *));
+extern STRINGLIST *gen_compspec_completions PARAMS((COMPSPEC *, const char *, const char *, int, int, int *));
+extern char **programmable_completions PARAMS((const char *, const char *, int, int, int *));
 
-extern void pcomp_set_readline_variables __P((int, int));
-extern void pcomp_set_compspec_options __P((COMPSPEC *, int, int));
+extern void pcomp_set_readline_variables PARAMS((int, int));
+extern void pcomp_set_compspec_options PARAMS((COMPSPEC *, int, int));
 #endif /* _PCOMPLETE_H_ */

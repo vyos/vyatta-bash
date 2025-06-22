@@ -1,6 +1,6 @@
 /* pathexp.c -- The shell interface to the globbing library. */
 
-/* Copyright (C) 1995-2009 Free Software Foundation, Inc.
+/* Copyright (C) 1995-2020 Free Software Foundation, Inc.
 
    This file is part of GNU Bash, the Bourne Again SHell.
 
@@ -38,15 +38,11 @@
 
 #include <glob/strmatch.h>
 
-static int glob_name_is_acceptable __P((const char *));
-static void ignore_globbed_names __P((char **, sh_ignore_func_t *));
-               
-#if defined (USE_POSIX_GLOB_LIBRARY)
-#  include <glob.h>
-typedef int posix_glob_errfunc_t __P((const char *, int));
-#else
-#  include <glob/glob.h>
-#endif
+static int glob_name_is_acceptable PARAMS((const char *));
+static void ignore_globbed_names PARAMS((char **, sh_ignore_func_t *));
+static char *split_ignorespec PARAMS((char *, int *));
+	       
+#include <glob/glob.h>
 
 /* Control whether * matches .files in globbing. */
 int glob_dot_filenames;
@@ -57,18 +53,21 @@ int extended_glob = EXTGLOB_DEFAULT;
 /* Control enabling special handling of `**' */
 int glob_star = 0;
 
-/* Return nonzero if STRING has any unquoted special globbing chars in it.  */
+/* Return nonzero if STRING has any unquoted special globbing chars in it.
+   This is supposed to be called when pathname expansion is performed, so
+   it implements the rules in Posix 2.13.3, specifically that an unquoted
+   slash cannot appear in a bracket expression. */
 int
 unquoted_glob_pattern_p (string)
      register char *string;
 {
   register int c;
   char *send;
-  int open;
+  int open, bsquote;
 
   DECLARE_MBSTATE;
 
-  open = 0;
+  open = bsquote = 0;
   send = string + strlen (string);
 
   while (c = *string++)
@@ -84,9 +83,13 @@ unquoted_glob_pattern_p (string)
 	  continue;
 
 	case ']':
-	  if (open)
+	  if (open)		/* XXX - if --open == 0? */
 	    return (1);
 	  continue;
+
+	case '/':
+	  if (open)
+	    open = 0;
 
 	case '+':
 	case '@':
@@ -95,8 +98,25 @@ unquoted_glob_pattern_p (string)
 	    return (1);
 	  continue;
 
-	case CTLESC:
+	/* A pattern can't end with a backslash, but a backslash in the pattern
+	   can be special to the matching engine, so we note it in case we
+	   need it later. */
 	case '\\':
+	  if (*string != '\0' && *string != '/')
+	    {
+	      bsquote = 1;
+	      string++;
+	      continue;
+	    }
+	  else if (open && *string == '/')
+	    {
+	      string++;		/* quoted slashes in bracket expressions are ok */
+	      continue;
+	    }
+	  else if (*string == 0)
+	    return (0);
+	 	  
+	case CTLESC:
 	  if (*string++ == '\0')
 	    return (0);
 	}
@@ -111,7 +131,12 @@ unquoted_glob_pattern_p (string)
       ADVANCE_CHAR_P (string, send - string);
 #endif
     }
+
+#if 0
+  return (bsquote ? 2 : 0);
+#else
   return (0);
+#endif
 }
 
 /* Return 1 if C is a character that is `special' in a POSIX ERE and needs to
@@ -141,6 +166,7 @@ ere_char (c)
   return (0);
 }
 
+/* This is only used to determine whether to backslash-quote a character. */
 int
 glob_char_p (s)
      const char *s;
@@ -156,7 +182,7 @@ glob_char_p (s)
     case '+':
     case '@':
     case '!':
-      if (s[1] == '(')        /*(*/
+      if (s[1] == '(')	/*(*/
 	return 1;
       break;
     }
@@ -171,8 +197,11 @@ glob_char_p (s)
    is performed, (flags & QGLOB_CVTNULL) should be 0; if called when quote
    removal has not been done (for example, before attempting to match a
    pattern while executing a case statement), flags should include
-   QGLOB_CVTNULL.  If flags includes QGLOB_FILENAME, appropriate quoting
-   to match a filename should be performed. */
+   QGLOB_CVTNULL.  If flags includes QGLOB_CTLESC, we need to remove CTLESC
+   quoting CTLESC or CTLNUL (as if dequote_string were called).  If flags
+   includes QGLOB_FILENAME, appropriate quoting to match a filename should be
+   performed.  QGLOB_REGEXP means we're quoting for a Posix ERE (for
+   [[ string =~ pat ]]) and that requires some special handling. */
 char *
 quote_string_for_globbing (pathname, qflags)
      const char *pathname;
@@ -180,8 +209,10 @@ quote_string_for_globbing (pathname, qflags)
 {
   char *temp;
   register int i, j;
+  int cclass, collsym, equiv, c, last_was_backslash;
+  int savei, savej;
 
-  temp = (char *)xmalloc (strlen (pathname) + 1);
+  temp = (char *)xmalloc (2 * strlen (pathname) + 1);
 
   if ((qflags & QGLOB_CVTNULL) && QUOTED_NULL (pathname))
     {
@@ -189,28 +220,157 @@ quote_string_for_globbing (pathname, qflags)
       return temp;
     }
 
+  cclass = collsym = equiv = last_was_backslash = 0;
   for (i = j = 0; pathname[i]; i++)
     {
-      if (pathname[i] == CTLESC)
+      /* Fix for CTLESC at the end of the string? */
+      if (pathname[i] == CTLESC && pathname[i+1] == '\0')
 	{
+	  temp[j++] = pathname[i++];
+	  break;
+	}
+      /* If we are parsing regexp, turn CTLESC CTLESC into CTLESC. It's not an
+	 ERE special character, so we should just be able to pass it through. */
+      else if ((qflags & (QGLOB_REGEXP|QGLOB_CTLESC)) && pathname[i] == CTLESC && (pathname[i+1] == CTLESC || pathname[i+1] == CTLNUL))
+	{
+	  i++;
+	  temp[j++] = pathname[i];
+	  continue;
+	}
+      else if (pathname[i] == CTLESC)
+	{
+convert_to_backslash:
 	  if ((qflags & QGLOB_FILENAME) && pathname[i+1] == '/')
 	    continue;
-	  if ((qflags & QGLOB_REGEXP) && ere_char (pathname[i+1]) == 0)
+	  /* What to do if preceding char is backslash? */
+	  if (pathname[i+1] != CTLESC && (qflags & QGLOB_REGEXP) && ere_char (pathname[i+1]) == 0)
 	    continue;
 	  temp[j++] = '\\';
 	  i++;
 	  if (pathname[i] == '\0')
 	    break;
 	}
-      else if (pathname[i] == '\\')
+      else if ((qflags & QGLOB_REGEXP) && (i == 0 || pathname[i-1] != CTLESC) && pathname[i] == '[')	/*]*/
 	{
+	  temp[j++] = pathname[i++];	/* open bracket */
+	  savej = j;
+	  savei = i;
+	  c = pathname[i++];	/* c == char after open bracket */
+	  if (c == '^')		/* ignore pattern negation */
+	    {
+	      temp[j++] = c;
+	      c = pathname[i++];
+	    }
+	  if (c == ']')		/* ignore right bracket if first char */
+	    {
+	      temp[j++] = c;
+	      c = pathname[i++];
+	    }
+	  do
+	    {
+	      if (c == 0)
+		goto endpat;
+	      else if (c == CTLESC)
+		{
+		  /* skip c, check for EOS, let assignment at end of loop */
+		  /* pathname[i] == backslash-escaped character */
+		  if (pathname[i] == 0)
+		    goto endpat;
+		  temp[j++] = pathname[i++];
+		}
+	      else if (c == '[' && pathname[i] == ':')
+		{
+		  temp[j++] = c;
+		  temp[j++] = pathname[i++];
+		  cclass = 1;
+		}
+	      else if (cclass && c == ':' && pathname[i] == ']')
+		{
+		  temp[j++] = c;
+		  temp[j++] = pathname[i++];
+		  cclass = 0;
+		}
+	      else if (c == '[' && pathname[i] == '=')
+		{
+		  temp[j++] = c;
+		  temp[j++] = pathname[i++];
+		  if (pathname[i] == ']')
+		    temp[j++] = pathname[i++];		/* right brack can be in equiv */
+		  equiv = 1;
+		}
+	      else if (equiv && c == '=' && pathname[i] == ']')
+		{
+		  temp[j++] = c;
+		  temp[j++] = pathname[i++];
+		  equiv = 0;
+		}
+	      else if (c == '[' && pathname[i] == '.')
+		{
+		  temp[j++] = c;
+		  temp[j++] = pathname[i++];
+		  if (pathname[i] == ']')
+		    temp[j++] = pathname[i++];		/* right brack can be in collsym */
+		  collsym = 1;
+		}
+	      else if (collsym && c == '.' && pathname[i] == ']')
+		{
+		  temp[j++] = c;
+		  temp[j++] = pathname[i++];
+		  collsym = 0;
+		}
+	      else
+		temp[j++] = c;
+	    }
+	  while (((c = pathname[i++]) != ']') && c != 0);
+
+	  /* If we don't find the closing bracket before we hit the end of
+	     the string, rescan string without treating it as a bracket
+	     expression (has implications for backslash and special ERE
+	     chars) */
+	  if (c == 0)
+	    {
+	      i = savei - 1;	/* -1 for autoincrement above */
+	      j = savej;
+	      continue;
+	    }
+
+	  temp[j++] = c;	/* closing right bracket */
+	  i--;			/* increment will happen above in loop */
+	  continue;		/* skip double assignment below */
+	}
+      else if (pathname[i] == '\\' && (qflags & QGLOB_REGEXP) == 0)
+	{
+	  /* XXX - if not quoting regexp, use backslash as quote char. Should
+	     We just pass it through without treating it as special? That is
+	     what ksh93 seems to do. */
+
+	  /* If we want to pass through backslash unaltered, comment out these
+	     lines. */
 	  temp[j++] = '\\';
+
 	  i++;
 	  if (pathname[i] == '\0')
 	    break;
+	  /* If we are turning CTLESC CTLESC into CTLESC, we need to do that
+	     even when the first CTLESC is preceded by a backslash. */
+	  if ((qflags & QGLOB_CTLESC) && pathname[i] == CTLESC && (pathname[i+1] == CTLESC || pathname[i+1] == CTLNUL))
+	    i++;	/* skip over the CTLESC */
+	  else if ((qflags & QGLOB_CTLESC) && pathname[i] == CTLESC)
+	    /* A little more general: if there is an unquoted backslash in the
+	       pattern and we are handling quoted characters in the pattern,
+	       convert the CTLESC to backslash and add the next character on
+	       the theory that the backslash will quote the next character
+	       but it would be inconsistent not to replace the CTLESC with
+	       another backslash here. We can't tell at this point whether the
+	       CTLESC comes from a backslash or other form of quoting in the
+	       original pattern. */
+	    goto convert_to_backslash;
 	}
+      else if (pathname[i] == '\\' && (qflags & QGLOB_REGEXP))
+        last_was_backslash = 1;
       temp[j++] = pathname[i];
     }
+endpat:
   temp[j] = '\0';
 
   return (temp);
@@ -218,10 +378,11 @@ quote_string_for_globbing (pathname, qflags)
 
 char *
 quote_globbing_chars (string)
-     char *string;
+     const char *string;
 {
   size_t slen;
-  char *temp, *s, *t, *send;
+  char *temp, *t;
+  const char *s, *send;
   DECLARE_MBSTATE;
 
   slen = strlen (string);
@@ -234,7 +395,7 @@ quote_globbing_chars (string)
 	*t++ = '\\';
 
       /* Copy a single (possibly multibyte) character from s to t,
-         incrementing both. */
+	 incrementing both. */
       COPY_CHAR_P (t, s, send);
     }
   *t = '\0';
@@ -243,63 +404,18 @@ quote_globbing_chars (string)
 
 /* Call the glob library to do globbing on PATHNAME. */
 char **
-shell_glob_filename (pathname)
+shell_glob_filename (pathname, qflags)
      const char *pathname;
+     int qflags;
 {
-#if defined (USE_POSIX_GLOB_LIBRARY)
-  register int i;
   char *temp, **results;
-  glob_t filenames;
-  int glob_flags;
-
-  temp = quote_string_for_globbing (pathname, QGLOB_FILENAME);
-
-  filenames.gl_offs = 0;
-
-#  if defined (GLOB_PERIOD)
-  glob_flags = glob_dot_filenames ? GLOB_PERIOD : 0;
-#  else
-  glob_flags = 0;
-#  endif /* !GLOB_PERIOD */
-
-  glob_flags |= (GLOB_ERR | GLOB_DOOFFS);
-
-  i = glob (temp, glob_flags, (posix_glob_errfunc_t *)NULL, &filenames);
-
-  free (temp);
-
-  if (i == GLOB_NOSPACE || i == GLOB_ABORTED)
-    return ((char **)NULL);
-  else if (i == GLOB_NOMATCH)
-    filenames.gl_pathv = (char **)NULL;
-  else if (i != 0)		/* other error codes not in POSIX.2 */
-    filenames.gl_pathv = (char **)NULL;
-
-  results = filenames.gl_pathv;
-
-  if (results && ((GLOB_FAILED (results)) == 0))
-    {
-      if (should_ignore_glob_matches ())
-	ignore_glob_matches (results);
-      if (results && results[0])
-	strvec_sort (results);
-      else
-	{
-	  FREE (results);
-	  results = (char **)NULL;
-	}
-    }
-
-  return (results);
-
-#else /* !USE_POSIX_GLOB_LIBRARY */
-
-  char *temp, **results;
+  int gflags, quoted_pattern;
 
   noglob_dot_filenames = glob_dot_filenames == 0;
 
-  temp = quote_string_for_globbing (pathname, QGLOB_FILENAME);
-  results = glob_filename (temp, glob_star ? GX_GLOBSTAR : 0);
+  temp = quote_string_for_globbing (pathname, QGLOB_FILENAME|qflags);
+  gflags = glob_star ? GX_GLOBSTAR : 0;
+  results = glob_filename (temp, gflags);
   free (temp);
 
   if (results && ((GLOB_FAILED (results)) == 0))
@@ -307,7 +423,7 @@ shell_glob_filename (pathname)
       if (should_ignore_glob_matches ())
 	ignore_glob_matches (results);
       if (results && results[0])
-	strvec_sort (results);
+	strvec_sort (results, 1);		/* posix sort */
       else
 	{
 	  FREE (results);
@@ -316,7 +432,6 @@ shell_glob_filename (pathname)
     }
 
   return (results);
-#endif /* !USE_POSIX_GLOB_LIBRARY */
 }
 
 /* Stuff for GLOBIGNORE. */
@@ -360,13 +475,21 @@ glob_name_is_acceptable (name)
      const char *name;
 {
   struct ign *p;
+  char *n;
   int flags;
 
-  /* . and .. are never matched */
-  if (name[0] == '.' && (name[1] == '\0' || (name[1] == '.' && name[2] == '\0')))
+  /* . and .. are never matched. We extend this to the terminal component of a
+     pathname. */
+  n = strrchr (name, '/');
+  if (n == 0 || n[1] == 0)
+    n = (char *)name;
+  else
+    n++;
+
+  if (n[0] == '.' && (n[1] == '\0' || (n[1] == '.' && n[2] == '\0')))
     return (0);
 
-  flags = FNM_PATHNAME | FNMATCH_EXTFLAG;
+  flags = FNM_PATHNAME | FNMATCH_EXTFLAG | FNMATCH_NOCASEGLOB;
   for (p = globignore.ignores; p->val; p++)
     {
       if (strmatch (p->val, (char *)name, flags) != FNM_NOMATCH)
@@ -428,6 +551,30 @@ ignore_glob_matches (names)
   ignore_globbed_names (names, glob_name_is_acceptable);
 }
 
+static char *
+split_ignorespec (s, ip)
+     char *s;
+     int *ip;
+{
+  char *t;
+  int n, i;
+
+  if (s == 0)
+    return 0;
+
+  i = *ip;
+  if (s[i] == 0)
+    return 0;
+
+  n = skip_to_delim (s, i, ":", SD_NOJMP|SD_EXTGLOB|SD_GLOB);
+  t = substring (s, i, n);
+
+  if (s[n] == ':')
+    n++;  
+  *ip = n;  
+  return t;
+}
+  
 void
 setup_ignore_patterns (ivp)
      struct ignorevar *ivp;
@@ -467,7 +614,11 @@ setup_ignore_patterns (ivp)
 
   numitems = maxitems = ptr = 0;
 
+#if 0
   while (colon_bit = extract_colon_unit (this_ignoreval, &ptr))
+#else
+  while (colon_bit = split_ignorespec (this_ignoreval, &ptr))
+#endif
     {
       if (numitems + 1 >= maxitems)
 	{

@@ -1,3 +1,17 @@
+#   This program is free software: you can redistribute it and/or modify
+#   it under the terms of the GNU General Public License as published by
+#   the Free Software Foundation, either version 3 of the License, or
+#   (at your option) any later version.
+#
+#   This program is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty of
+#   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#   GNU General Public License for more details.
+#
+#   You should have received a copy of the GNU General Public License
+#   along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+wdir=$PWD
 # this is needed because posix mode restricts tilde expansion to assignment
 # statements preceding a command, instead of the default of expanding all
 # assignment statements on the line (e.g., after `export').  Without this,
@@ -48,6 +62,8 @@ echo "$PPATH"
 declare -x PPATH="$XPATH:~/bin"
 echo "$PPATH"
 
+printf "%q\n" '~'
+
 # more tests of tilde expansion when executing case commands
 case ~ in
 $HOME)	echo ok 1;;
@@ -67,3 +83,12 @@ esac
 
 USER=root		# should exist just about everywhere
 echo ~$USER
+
+cd "$wdir"
+
+# this test is incomplete; should also test assignment statements (tilde3.sub)
+echo foo=bar:~
+set -o posix
+echo foo=bar:~
+
+exit 0

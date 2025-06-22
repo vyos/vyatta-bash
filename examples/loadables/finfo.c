@@ -5,11 +5,35 @@
  * chet@po.cwru.edu
  */
 
+/*
+   Copyright (C) 1999-2009 Free Software Foundation, Inc.
+
+   This file is part of GNU Bash.
+   Bash is free software: you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation, either version 3 of the License, or
+   (at your option) any later version.
+
+   Bash is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with Bash.  If not, see <http://www.gnu.org/licenses/>.
+*/
+
 #ifdef HAVE_CONFIG_H
 #  include <config.h>
 #endif
 
 #include <sys/types.h>
+#ifdef MAJOR_IN_MKDEV
+#  include <sys/mkdev.h>
+#endif
+#ifdef MAJOR_IN_SYSMACROS
+#  include <sys/sysmacros.h>
+#endif
 #include "posixstat.h"
 #include <stdio.h>
 #include <pwd.h>
@@ -21,6 +45,7 @@
 #include "shell.h"
 #include "builtins.h"
 #include "common.h"
+#include "getopt.h"
 
 #ifndef errno
 extern int	errno;
@@ -28,8 +53,10 @@ extern int	errno;
 
 extern char	**make_builtin_argv ();
 
+static void	perms();
 static int	printst();
 static int	printsome();
+static void	printmode();
 static int	printfinfo();
 static int	finfo_main();
 
@@ -174,7 +201,7 @@ int	m;
 	return (m & (S_IRWXU|S_IRWXG|S_IRWXO|S_ISUID|S_ISGID));
 }
 
-static int
+static void
 perms(m)
 int	m;
 {
@@ -218,7 +245,7 @@ int	m;
 	printf ("u=%s,g=%s,o=%s", ubits, gbits, obits);
 }
 
-static int
+static void
 printmode(mode)
 int	mode;
 {
@@ -244,7 +271,7 @@ int	mode;
 	printf("\n");
 }
 
-static int	
+static int
 printst(st)
 struct stat *st;
 {
@@ -313,13 +340,13 @@ int	flags;
 		else
 			printf("%ld\n", st->st_ctime);
 	} else if (flags & OPT_DEV)
-		printf("%d\n", st->st_dev);
+		printf("%lu\n", (unsigned long)st->st_dev);
 	else if (flags & OPT_INO)
-		printf("%d\n", st->st_ino);
+		printf("%lu\n", (unsigned long)st->st_ino);
 	else if (flags & OPT_FID)
-		printf("%d:%ld\n", st->st_dev, st->st_ino);
+		printf("%lu:%lu\n", (unsigned long)st->st_dev, (unsigned long)st->st_ino);
 	else if (flags & OPT_NLINK)
-		printf("%d\n", st->st_nlink);
+		printf("%lu\n", (unsigned long)st->st_nlink);
 	else if (flags & OPT_LNKNAM) {
 #ifdef S_ISLNK
 		b = xmalloc(4096);
@@ -441,7 +468,7 @@ char	**argv;
 void
 builtin_usage()
 {
-	fprintf(stderr, "%s: usage: %s [-%s] [file ...]\n", prog, OPTIONS);
+	fprintf(stderr, "%s: usage: %s [-%s] [file ...]\n", prog, prog, OPTIONS);
 }
 
 #ifndef HAVE_STRERROR

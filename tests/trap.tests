@@ -1,3 +1,16 @@
+#   This program is free software: you can redistribute it and/or modify
+#   it under the terms of the GNU General Public License as published by
+#   the Free Software Foundation, either version 3 of the License, or
+#   (at your option) any later version.
+#
+#   This program is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty of
+#   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#   GNU General Public License for more details.
+#
+#   You should have received a copy of the GNU General Public License
+#   along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
 # test the trap code
 
 trap 'echo exiting' 0
@@ -62,11 +75,20 @@ echo $?
 # hmmm...should this set the handling to SIG_IGN for children, too?
 trap '' USR2
 ./trap1.sub
+trap - USR2
 
 # test ERR trap
 ./trap2.sub
 
 ${THIS_SH} ./trap3.sub
+
+${THIS_SH} ./trap4.sub
+
+# This doesn't work right on all Unix versions
+#${THIS_SH} ./trap5.sub
+
+# Return trap issues
+${THIS_SH} ./trap6.sub
 
 #
 # show that setting a trap on SIGCHLD is not disastrous.
@@ -90,4 +112,3 @@ trap
 
 trap - SIGCHLD
 wait
-

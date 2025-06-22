@@ -1,3 +1,16 @@
+#   This program is free software: you can redistribute it and/or modify
+#   it under the terms of the GNU General Public License as published by
+#   the Free Software Foundation, either version 3 of the License, or
+#   (at your option) any later version.
+#
+#   This program is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty of
+#   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#   GNU General Public License for more details.
+#
+#   You should have received a copy of the GNU General Public License
+#   along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
 # A test suite for the POSIX.2 (BRE) pattern matching code
 LC_ALL=C
 LANG=C
@@ -20,13 +33,15 @@ case 9 in
 [![:alpha:]])	echo ok 4;;
 esac
 
-# invalid character class expressions are just characters to be matched
 case a in
 [:al:])		echo ok 5;;
 esac
 
+# invalid character class expressions are no longer just characters to be
+# matched
 case a in
-[[:al:])	echo ok 6;;
+[[:al:])	echo bad 6;;
+*)		echo ok 6;;
 esac
 
 case '!' in
@@ -230,4 +245,3 @@ case a in
 [[=b=])		echo oops;;	# an incomplete equiv class is just a string
 *)		echo ok 3;;
 esac
-

@@ -1,6 +1,6 @@
 /* general.c -- Stuff that is used by all files. */
 
-/* Copyright (C) 1987-2009 Free Software Foundation, Inc.
+/* Copyright (C) 1987-2021 Free Software Foundation, Inc.
 
    This file is part of GNU Bash, the Bourne Again SHell.
 
@@ -21,7 +21,7 @@
 #include "config.h"
 
 #include "bashtypes.h"
-#ifndef _MINIX
+#if defined (HAVE_SYS_PARAM_H)
 #  include <sys/param.h>
 #endif
 #include "posixstat.h"
@@ -39,7 +39,18 @@
 #include "bashintl.h"
 
 #include "shell.h"
+#include "parser.h"
+#include "flags.h"
+#include "findcmd.h"
 #include "test.h"
+#include "trap.h"
+#include "pathexp.h"
+
+#include "builtins/common.h"
+
+#if defined (HAVE_MBSTR_H) && defined (HAVE_MBSCHR)
+#  include <mbstr.h>		/* mbschr */
+#endif
 
 #include <tilde/tilde.h>
 
@@ -47,20 +58,47 @@
 extern int errno;
 #endif /* !errno */
 
-extern int expand_aliases;
-extern int interactive_comments;
-extern int check_hashed_filenames;
-extern int source_uses_path;
-extern int source_searches_cwd;
+#ifdef __CYGWIN__
+#  include <sys/cygwin.h>
+#endif
 
-static char *bash_special_tilde_expansions __P((char *));
-static int unquoted_tilde_word __P((const char *));
-static void initialize_group_array __P((void));
+static char *bash_special_tilde_expansions PARAMS((char *));
+static int unquoted_tilde_word PARAMS((const char *));
+static void initialize_group_array PARAMS((void));
 
 /* A standard error message to use when getcwd() returns NULL. */
 const char * const bash_getcwd_errstr = N_("getcwd: cannot access parent directories");
 
-/* Do whatever is necessary to initialize `Posix mode'. */
+/* Do whatever is necessary to initialize `Posix mode'.  This currently
+   modifies the following variables which are controlled via shopt:
+      interactive_comments
+      source_uses_path
+      expand_aliases
+      inherit_errexit
+      print_shift_error
+      posixglob
+
+   and the following variables which cannot be user-modified:
+
+      source_searches_cwd
+
+  If we add to the first list, we need to change the table and functions
+  below */
+
+static struct {
+  int *posix_mode_var;
+} posix_vars[] = 
+{
+  &interactive_comments,
+  &source_uses_path,
+  &expaliases_flag,
+  &inherit_errexit,
+  &print_shift_error,
+  0
+};
+
+static char *saved_posix_vars = 0;
+
 void
 posix_initialize (on)
      int on;
@@ -68,16 +106,63 @@ posix_initialize (on)
   /* Things that should be turned on when posix mode is enabled. */
   if (on != 0)
     {
-      interactive_comments = source_uses_path = expand_aliases = 1;
+      interactive_comments = source_uses_path = 1;
+      expand_aliases = expaliases_flag = 1;
+      inherit_errexit = 1;
       source_searches_cwd = 0;
+      print_shift_error = 1;
     }
 
   /* Things that should be turned on when posix mode is disabled. */
-  if (on == 0)
+  else if (saved_posix_vars)		/* on == 0, restore saved settings */
+    {
+      set_posix_options (saved_posix_vars);
+      expand_aliases = expaliases_flag;
+      free (saved_posix_vars);
+      saved_posix_vars = 0;
+    }
+  else	/* on == 0, restore a default set of settings */
     {
       source_searches_cwd = 1;
-      expand_aliases = interactive_shell;
+      expand_aliases = expaliases_flag = interactive_shell;	/* XXX */
+      print_shift_error = 0;
     }
+}
+
+int
+num_posix_options ()
+{
+  return ((sizeof (posix_vars) / sizeof (posix_vars[0])) - 1);
+}
+
+char *
+get_posix_options (bitmap)
+     char *bitmap;
+{
+  register int i;
+
+  if (bitmap == 0)
+    bitmap = (char *)xmalloc (num_posix_options ());	/* no trailing NULL */
+  for (i = 0; posix_vars[i].posix_mode_var; i++)
+    bitmap[i] = *(posix_vars[i].posix_mode_var);
+  return bitmap;
+}
+
+#undef save_posix_options
+void
+save_posix_options ()
+{
+  saved_posix_vars = get_posix_options (saved_posix_vars);
+}
+
+void
+set_posix_options (bitmap)
+     const char *bitmap;
+{
+  register int i;
+
+  for (i = 0; posix_vars[i].posix_mode_var; i++)
+    *(posix_vars[i].posix_mode_var) = bitmap[i];
 }
 
 /* **************************************************************** */
@@ -146,9 +231,9 @@ print_rlimtype (n, addnl)
 /* Return non-zero if all of the characters in STRING are digits. */
 int
 all_digits (string)
-     char *string;
+     const char *string;
 {
-  register char *s;
+  register const char *s;
 
   for (s = string; *s; s++)
     if (DIGIT (*s) == 0)
@@ -171,6 +256,9 @@ legal_number (string, result)
   if (result)
     *result = 0;
 
+  if (string == 0)
+    return 0;
+
   errno = 0;
   value = strtoimax (string, &ep, 10);
   if (errno || ep == string)
@@ -182,7 +270,7 @@ legal_number (string, result)
 
   /* If *string is not '\0' but *ep is '\0' on return, the entire string
      is valid. */
-  if (string && *string && *ep == '\0')
+  if (*string && *ep == '\0')
     {
       if (result)
 	*result = value;
@@ -200,9 +288,9 @@ legal_number (string, result)
    digit. */
 int
 legal_identifier (name)
-     char *name;
+     const char *name;
 {
-  register char *s;
+  register const char *s;
   unsigned char c;
 
   if (!name || !(c = *name) || (legal_variable_starter (c) == 0))
@@ -216,22 +304,73 @@ legal_identifier (name)
   return (1);
 }
 
+/* Return 1 if NAME is a valid value that can be assigned to a nameref
+   variable.  FLAGS can be 2, in which case the name is going to be used
+   to create a variable.  Other values are currently unused, but could
+   be used to allow values to be stored and indirectly referenced, but
+   not used in assignments. */
+int
+valid_nameref_value (name, flags)
+     const char *name;
+     int flags;
+{
+  if (name == 0 || *name == 0)
+    return 0;
+
+  /* valid identifier */
+#if defined (ARRAY_VARS)  
+  if (legal_identifier (name) || (flags != 2 && valid_array_reference (name, 0)))
+#else
+  if (legal_identifier (name))
+#endif
+    return 1;
+
+  return 0;
+}
+
+int
+check_selfref (name, value, flags)
+     const char *name;
+     char *value;
+     int flags;
+{
+  char *t;
+
+  if (STREQ (name, value))
+    return 1;
+
+#if defined (ARRAY_VARS)
+  if (valid_array_reference (value, 0))
+    {
+      t = array_variable_name (value, 0, (char **)NULL, (int *)NULL);
+      if (t && STREQ (name, t))
+	{
+	  free (t);
+	  return 1;
+	}
+      free (t);
+    }
+#endif
+
+  return 0;	/* not a self reference */
+}
+
 /* Make sure that WORD is a valid shell identifier, i.e.
-   does not contain a dollar sign, nor is quoted in any way.  Nor
-   does it consist of all digits.  If CHECK_WORD is non-zero,
+   does not contain a dollar sign, nor is quoted in any way.
+   If CHECK_WORD is non-zero,
    the word is checked to ensure that it consists of only letters,
-   digits, and underscores. */
+   digits, and underscores, and does not consist of all digits. */
 int
 check_identifier (word, check_word)
      WORD_DESC *word;
      int check_word;
 {
-  if ((word->flags & (W_HASDOLLAR|W_QUOTED)) || all_digits (word->word))
+  if (word->flags & (W_HASDOLLAR|W_QUOTED))	/* XXX - HASDOLLAR? */
     {
       internal_error (_("`%s': not a valid identifier"), word->word);
       return (0);
     }
-  else if (check_word && legal_identifier (word->word) == 0)
+  else if (check_word && (all_digits (word->word) || legal_identifier (word->word) == 0))
     {
       internal_error (_("`%s': not a valid identifier"), word->word);
       return (0);
@@ -240,15 +379,45 @@ check_identifier (word, check_word)
     return (1);
 }
 
+/* Return 1 if STRING is a function name that the shell will import from
+   the environment.  Currently we reject attempts to import shell functions
+   containing slashes, beginning with newlines or containing blanks.  In
+   Posix mode, we require that STRING be a valid shell identifier.  Not
+   used yet. */
+int
+importable_function_name (string, len)
+     const char *string;
+     size_t len;
+{
+  if (absolute_program (string))	/* don't allow slash */
+    return 0;
+  if (*string == '\n')			/* can't start with a newline */
+    return 0;
+  if (shellblank (*string) || shellblank(string[len-1]))
+    return 0;
+  return (posixly_correct ? legal_identifier (string) : 1);
+}
+
+int
+exportable_function_name (string)
+     const char *string;
+{
+  if (absolute_program (string))
+    return 0;
+  if (mbschr (string, '=') != 0)
+    return 0;
+  return 1;
+}
+
 /* Return 1 if STRING comprises a valid alias name.  The shell accepts
    essentially all characters except those which must be quoted to the
    parser (which disqualifies them from alias expansion anyway) and `/'. */
 int
 legal_alias_name (string, flags)
-     char *string;
+     const char *string;
      int flags;
 {
-  register char *s;
+  register const char *s;
 
   for (s = string; *s; s++)
     if (shellbreak (*s) || shellxquote (*s) || shellexp (*s) || (*s == '/'))
@@ -257,7 +426,9 @@ legal_alias_name (string, flags)
 }
 
 /* Returns non-zero if STRING is an assignment statement.  The returned value
-   is the index of the `=' sign. */
+   is the index of the `=' sign.  If FLAGS&1 we are expecting a compound assignment
+   and require an array subscript before the `=' to denote an assignment
+   statement. */
 int
 assignment (string, flags)
      const char *string;
@@ -269,7 +440,17 @@ assignment (string, flags)
   c = string[indx = 0];
 
 #if defined (ARRAY_VARS)
-  if ((legal_variable_starter (c) == 0) && (flags == 0 || c != '[')) /* ] */
+  /* If parser_state includes PST_COMPASSIGN, FLAGS will include 1, so we are
+     parsing the contents of a compound assignment. If parser_state includes
+     PST_REPARSE, we are in the middle of an assignment statement and breaking
+     the words between the parens into words and assignment statements, but
+     we don't need to check for that right now. Within a compound assignment,
+     the subscript is required to make the word an assignment statement. If
+     we don't have a subscript, even if the word is a valid assignment
+     statement otherwise, we don't want to treat it as one. */
+  if ((flags & 1) && c != '[')		/* ] */
+    return (0);
+  else if ((flags & 1) == 0 && legal_variable_starter (c) == 0)
 #else
   if (legal_variable_starter (c) == 0)
 #endif
@@ -285,7 +466,9 @@ assignment (string, flags)
 #if defined (ARRAY_VARS)
       if (c == '[')
 	{
-	  newi = skipsubscript (string, indx, 0);
+	  newi = skipsubscript (string, indx, (flags & 2) ? 1 : 0);
+	  /* XXX - why not check for blank subscripts here, if we do in
+	     valid_array_reference? */
 	  if (string[newi++] != ']')
 	    return (0);
 	  if (string[newi] == '+' && string[newi+1] == '=')
@@ -306,6 +489,20 @@ assignment (string, flags)
       indx++;
     }
   return (0);
+}
+
+int
+line_isblank (line)
+     const char *line;
+{
+  register int i;
+
+  if (line == 0)
+    return 0;		/* XXX */
+  for (i = 0; line[i]; i++)
+    if (isblank ((unsigned char)line[i]) == 0)
+      break;
+  return (line[i] == '\0');  
 }
 
 /* **************************************************************** */
@@ -355,12 +552,28 @@ sh_unset_nodelay_mode (fd)
   return 0;
 }
 
+/* Just a wrapper for the define in include/filecntl.h */
+int
+sh_setclexec (fd)
+     int fd;
+{
+  return (SET_CLOSE_ON_EXEC (fd));
+}
+
 /* Return 1 if file descriptor FD is valid; 0 otherwise. */
 int
 sh_validfd (fd)
      int fd;
 {
   return (fcntl (fd, F_GETFD, 0) >= 0);
+}
+
+int
+fd_ispipe (fd)
+     int fd;
+{
+  errno = 0;
+  return ((lseek (fd, 0L, SEEK_CUR) < 0) && (errno == ESPIPE));
 }
 
 /* There is a bug in the NeXT 2.1 rlogind that causes opens
@@ -388,7 +601,8 @@ check_dev_tty ()
 	return;
       tty_fd = open (tty, O_RDWR|O_NONBLOCK);
     }
-  close (tty_fd);
+  if (tty_fd >= 0)
+    close (tty_fd);
 }
 
 /* Return 1 if PATH1 and PATH2 are the same file.  This is kind of
@@ -396,7 +610,7 @@ check_dev_tty ()
    corresponding to PATH1 and PATH2, respectively. */
 int
 same_file (path1, path2, stp1, stp2)
-     char *path1, *path2;
+     const char *path1, *path2;
      struct stat *stp1, *stp2;
 {
   struct stat st1, st2;
@@ -465,16 +679,24 @@ move_to_high_fd (fd, check_new, maxfd)
 
 int
 check_binary_file (sample, sample_len)
-     char *sample;
+     const char *sample;
      int sample_len;
 {
   register int i;
+  int nline;
   unsigned char c;
+
+  if (sample_len >= 4 && sample[0] == 0x7f && sample[1] == 'E' && sample[2] == 'L' && sample[3] == 'F')
+    return 1;
+
+  /* Generally we check the first line for NULs. If the first line looks like
+     a `#!' interpreter specifier, we look for NULs in the first two lines. */
+  nline = (sample[0] == '#' && sample[1] == '!') ? 2 : 1;
 
   for (i = 0; i < sample_len; i++)
     {
       c = sample[i];
-      if (c == '\n')
+      if (c == '\n' && --nline == 0)
 	return (0);
       if (c == '\0')
 	return (1);
@@ -526,7 +748,7 @@ sh_closepipe (pv)
 
 int
 file_exists (fn)
-     char *fn;
+     const char *fn;
 {
   struct stat sb;
 
@@ -535,7 +757,7 @@ file_exists (fn)
 
 int
 file_isdir (fn)
-     char *fn;
+     const char *fn;
 {
   struct stat sb;
 
@@ -544,9 +766,25 @@ file_isdir (fn)
 
 int
 file_iswdir (fn)
-     char *fn;
+     const char *fn;
 {
   return (file_isdir (fn) && sh_eaccess (fn, W_OK) == 0);
+}
+
+/* Return 1 if STRING is "." or "..", optionally followed by a directory
+   separator */
+int
+path_dot_or_dotdot (string)
+     const char *string;
+{
+  if (string == 0 || *string == '\0' || *string != '.')
+    return (0);
+
+  /* string[0] == '.' */
+  if (PATHSEP(string[1]) || (string[1] == '.' && PATHSEP(string[2])))
+    return (1);
+
+  return (0);
 }
 
 /* Return 1 if STRING contains an absolute pathname, else 0.  Used by `cd'
@@ -592,7 +830,7 @@ absolute_program (string)
    begin with. */
 char *
 make_absolute (string, dot_path)
-     char *string, *dot_path;
+     const char *string, *dot_path;
 {
   char *result;
 
@@ -601,7 +839,8 @@ make_absolute (string, dot_path)
     {
       char pathbuf[PATH_MAX + 1];
 
-      cygwin_conv_to_full_posix_path (string, pathbuf);
+      /* WAS cygwin_conv_to_full_posix_path (string, pathbuf); */
+      cygwin_conv_path (CCP_WIN_A_TO_POSIX, string, pathbuf, PATH_MAX);
       result = savestring (pathbuf);
     }
 #else
@@ -740,10 +979,31 @@ trim_pathname (name, maxlen)
   *nbeg++ = '.';
 
   nlen = nend - ntail;
-  memcpy (nbeg, ntail, nlen);
+  memmove (nbeg, ntail, nlen);
   nbeg[nlen] = '\0';
 
   return name;
+}
+
+/* Return a printable representation of FN without special characters.  The
+   caller is responsible for freeing memory if this returns something other
+   than its argument.  If FLAGS is non-zero, we are printing for portable
+   re-input and should single-quote filenames appropriately. */
+char *
+printable_filename (fn, flags)
+     char *fn;
+     int flags;
+{
+  char *newf;
+
+  if (ansic_shouldquote (fn))
+    newf = ansic_quote (fn, 0, NULL);
+  else if (flags && sh_contains_shell_metas (fn))
+    newf = sh_single_quote (fn);
+  else
+    newf = fn;
+
+  return newf;
 }
 
 /* Given a string containing units of information separated by colons,
@@ -800,7 +1060,7 @@ extract_colon_unit (string, p_index)
 /* **************************************************************** */
 
 #if defined (PUSHD_AND_POPD)
-extern char *get_dirstack_from_string __P((char *));
+extern char *get_dirstack_from_string PARAMS((char *));
 #endif
 
 static char **bash_tilde_prefixes;
@@ -949,12 +1209,8 @@ bash_tilde_expand (s, assign_p)
      const char *s;
      int assign_p;
 {
-  int old_immed, old_term, r;
+  int r;
   char *ret;
-
-  old_immed = interrupt_immediately;
-  old_term = terminate_immediately;
-  interrupt_immediately = terminate_immediately = 1;
 
   tilde_additional_prefixes = assign_p == 0 ? (char **)0
   					    : (assign_p == 2 ? bash_tilde_prefixes2 : bash_tilde_prefixes);
@@ -963,8 +1219,9 @@ bash_tilde_expand (s, assign_p)
 
   r = (*s == '~') ? unquoted_tilde_word (s) : 1;
   ret = r ? tilde_expand (s) : savestring (s);
-  interrupt_immediately = old_immed;
-  terminate_immediately = old_term;
+
+  QUIT;
+
   return (ret);
 }
 
@@ -1134,3 +1391,61 @@ get_group_array (ngp)
     *ngp = ngroups;
   return group_iarray;
 }
+
+/* **************************************************************** */
+/*								    */
+/*	  Miscellaneous functions				    */
+/*								    */
+/* **************************************************************** */
+
+/* Return a value for PATH that is guaranteed to find all of the standard
+   utilities.  This uses Posix.2 configuration variables, if present.  It
+   uses a value defined in config.h as a last resort. */
+char *
+conf_standard_path ()
+{
+#if defined (_CS_PATH) && defined (HAVE_CONFSTR)
+  char *p;
+  size_t len;
+
+  len = (size_t)confstr (_CS_PATH, (char *)NULL, (size_t)0);
+  if (len > 0)
+    {
+      p = (char *)xmalloc (len + 2);
+      *p = '\0';
+      confstr (_CS_PATH, p, len);
+      return (p);
+    }
+  else
+    return (savestring (STANDARD_UTILS_PATH));
+#else /* !_CS_PATH || !HAVE_CONFSTR  */
+#  if defined (CS_PATH)
+  return (savestring (CS_PATH));
+#  else
+  return (savestring (STANDARD_UTILS_PATH));
+#  endif /* !CS_PATH */
+#endif /* !_CS_PATH || !HAVE_CONFSTR */
+}
+
+int
+default_columns ()
+{
+  char *v;
+  int c;
+
+  c = -1;
+  v = get_string_value ("COLUMNS");
+  if (v && *v)
+    {
+      c = atoi (v);
+      if (c > 0)
+	return c;
+    }
+
+  if (check_window_size)
+    get_new_window_size (0, (int *)0, &c);
+
+  return (c > 0 ? c : 80);
+}
+
+  

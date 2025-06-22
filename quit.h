@@ -1,6 +1,6 @@
 /* quit.h -- How to handle SIGINT gracefully. */
 
-/* Copyright (C) 1993-2009 Free Software Foundation, Inc.
+/* Copyright (C) 1993-2021 Free Software Foundation, Inc.
 
    This file is part of GNU Bash, the Bourne Again SHell.
 
@@ -21,9 +21,11 @@
 #if !defined (_QUIT_H_)
 #define _QUIT_H_
 
-/* Non-zero means SIGINT has already ocurred. */
-extern volatile int interrupt_state;
-extern volatile int terminating_signal;
+#include "sig.h"	/* for sig_atomic_t */
+
+/* Non-zero means SIGINT has already occurred. */
+extern volatile sig_atomic_t interrupt_state;
+extern volatile sig_atomic_t terminating_signal;
 
 /* Macro to call a great deal.  SIGINT just sets the interrupt_state variable.
    When it is safe, put QUIT in the code, and the "interrupt" will take
@@ -42,6 +44,8 @@ extern volatile int terminating_signal;
 #define ADDINTERRUPT interrupt_state++
 #define DELINTERRUPT interrupt_state--
 
+#define ISINTERRUPT interrupt_state != 0
+
 /* The same sort of thing, this time just for signals that would ordinarily
    cause the shell to terminate. */
 
@@ -50,4 +54,22 @@ extern volatile int terminating_signal;
     if (terminating_signal) termsig_handler (terminating_signal); \
   } while (0)
 
+#define LASTSIG() \
+  (terminating_signal ? terminating_signal : (interrupt_state ? SIGINT : 0))
+
+#define CHECK_WAIT_INTR \
+  do { \
+    if (wait_intr_flag && wait_signal_received && this_shell_builtin && (this_shell_builtin == wait_builtin)) \
+      sh_longjmp (wait_intr_buf, 1); \
+  } while (0)
+
+#define RESET_SIGTERM \
+  do { \
+    sigterm_received = 0; \
+  } while (0)
+
+#define CHECK_SIGTERM \
+  do { \
+    if (sigterm_received) termsig_handler (SIGTERM); \
+  } while (0)
 #endif /* _QUIT_H_ */

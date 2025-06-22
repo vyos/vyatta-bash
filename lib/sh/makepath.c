@@ -1,6 +1,6 @@
 /* makepath.c - glue PATH and DIR together into a full pathname. */
 
-/* Copyright (C) 1987, 1989, 1991 Free Software Foundation, Inc.
+/* Copyright (C) 1987-2020 Free Software Foundation, Inc.
 
    This file is part of GNU Bash, the Bourne Again SHell.
 
@@ -45,7 +45,7 @@
 #  define MP_IGNDOT	0x08
 #endif
 
-extern char *get_working_directory __P((char *));
+extern char *get_working_directory PARAMS((char *));
 
 static char *nullpath = "";
 
@@ -94,7 +94,7 @@ sh_makepath (path, dir, flags)
 	MAKEDOT();
     }
   else if ((flags & MP_IGNDOT) && path[0] == '.' && (path[1] == '\0' ||
-						     path[1] == '/' && path[2] == '\0'))
+						     (path[1] == '/' && path[2] == '\0')))
     {
       xpath = nullpath;
       pathlen = 0;

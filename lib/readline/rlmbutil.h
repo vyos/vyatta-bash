@@ -1,6 +1,6 @@
 /* rlmbutil.h -- utility functions for multibyte characters. */
 
-/* Copyright (C) 2001-2009 Free Software Foundation, Inc.
+/* Copyright (C) 2001-2021 Free Software Foundation, Inc.
 
    This file is part of the GNU Readline Library (Readline), a library
    for reading lines of text with interactive input and history editing.      
@@ -28,7 +28,7 @@
 /* check multibyte capability for I18N code     */
 /************************************************/
 
-/* For platforms which support the ISO C amendement 1 functionality we
+/* For platforms which support the ISO C amendment 1 functionality we
    support user defined character classes.  */
    /* Solaris 2.5 has a bug: <wchar.h> must be included before <wctype.h>.  */
 #if defined (HAVE_WCTYPE_H) && defined (HAVE_WCHAR_H) && defined (HAVE_LOCALE_H)
@@ -82,6 +82,19 @@
 /************************************************/
 
 /*
+ * wchar_t doesn't work for 32-bit values on Windows using MSVC
+ */
+#ifdef WCHAR_T_BROKEN
+#  define WCHAR_T char32_t
+#  define MBRTOWC mbrtoc32
+#  define WCRTOMB c32rtomb
+#else	/* normal systems */
+#  define WCHAR_T wchar_t
+#  define MBRTOWC mbrtowc
+#  define WCRTOMB wcrtomb
+#endif
+
+/*
  * Flags for _rl_find_prev_mbchar and _rl_find_next_mbchar:
  *
  * MB_FIND_ANY		find any multibyte character
@@ -91,22 +104,22 @@
 #define MB_FIND_ANY	0x00
 #define MB_FIND_NONZERO	0x01
 
-extern int _rl_find_prev_mbchar PARAMS((char *, int, int));
-extern int _rl_find_next_mbchar PARAMS((char *, int, int, int));
+extern int _rl_find_prev_mbchar (char *, int, int);
+extern int _rl_find_next_mbchar (char *, int, int, int);
 
 #ifdef HANDLE_MULTIBYTE
 
-extern int _rl_compare_chars PARAMS((char *, int, mbstate_t *, char *, int, mbstate_t *));
-extern int _rl_get_char_len PARAMS((char *, mbstate_t *));
-extern int _rl_adjust_point PARAMS((char *, int, mbstate_t *));
+extern int _rl_compare_chars (char *, int, mbstate_t *, char *, int, mbstate_t *);
+extern int _rl_get_char_len (char *, mbstate_t *);
+extern int _rl_adjust_point (char *, int, mbstate_t *);
 
-extern int _rl_read_mbchar PARAMS((char *, int));
-extern int _rl_read_mbstring PARAMS((int, char *, int));
+extern int _rl_read_mbchar (char *, int);
+extern int _rl_read_mbstring (int, char *, int);
 
-extern int _rl_is_mbchar_matched PARAMS((char *, int, int, char *, int));
+extern int _rl_is_mbchar_matched (char *, int, int, char *, int);
 
-extern wchar_t _rl_char_value PARAMS((char *, int));
-extern int _rl_walphabetic PARAMS((wchar_t));
+extern WCHAR_T _rl_char_value (char *, int);
+extern int _rl_walphabetic (WCHAR_T);
 
 #define _rl_to_wupper(wc)	(iswlower (wc) ? towupper (wc) : (wc))
 #define _rl_to_wlower(wc)	(iswupper (wc) ? towlower (wc) : (wc))
@@ -122,6 +135,58 @@ extern int _rl_walphabetic PARAMS((wchar_t));
 
 #define MB_INVALIDCH(x)		((x) == (size_t)-1 || (x) == (size_t)-2)
 #define MB_NULLWCH(x)		((x) == 0)
+
+/* Try and shortcut the printable ascii characters to cut down the number of
+   calls to a libc wcwidth() */
+static inline int
+_rl_wcwidth (WCHAR_T wc)
+{
+  switch (wc)
+    {
+    case ' ': case '!': case '"': case '#': case '%':
+    case '&': case '\'': case '(': case ')': case '*':
+    case '+': case ',': case '-': case '.': case '/':
+    case '0': case '1': case '2': case '3': case '4':
+    case '5': case '6': case '7': case '8': case '9':
+    case ':': case ';': case '<': case '=': case '>':
+    case '?':
+    case 'A': case 'B': case 'C': case 'D': case 'E':
+    case 'F': case 'G': case 'H': case 'I': case 'J':
+    case 'K': case 'L': case 'M': case 'N': case 'O':
+    case 'P': case 'Q': case 'R': case 'S': case 'T':
+    case 'U': case 'V': case 'W': case 'X': case 'Y':
+    case 'Z':
+    case '[': case '\\': case ']': case '^': case '_':
+    case 'a': case 'b': case 'c': case 'd': case 'e':
+    case 'f': case 'g': case 'h': case 'i': case 'j':
+    case 'k': case 'l': case 'm': case 'n': case 'o':
+    case 'p': case 'q': case 'r': case 's': case 't':
+    case 'u': case 'v': case 'w': case 'x': case 'y':
+    case 'z': case '{': case '|': case '}': case '~':
+      return 1;
+    default:
+      return wcwidth (wc);
+    }
+}
+
+/* Unicode combining characters range from U+0300 to U+036F */
+#define UNICODE_COMBINING_CHAR(x) ((x) >= 768 && (x) <= 879)
+
+#if defined (WCWIDTH_BROKEN)
+#  define WCWIDTH(wc)	((_rl_utf8locale && UNICODE_COMBINING_CHAR(wc)) ? 0 : _rl_wcwidth(wc))
+#else
+#  define WCWIDTH(wc)	_rl_wcwidth(wc)
+#endif
+
+#if defined (WCWIDTH_BROKEN)
+#  define IS_COMBINING_CHAR(x)	(WCWIDTH(x) == 0 && iswcntrl(x) == 0)
+#else
+#  define IS_COMBINING_CHAR(x)	(WCWIDTH(x) == 0)
+#endif
+
+#define UTF8_SINGLEBYTE(c)	(((c) & 0x80) == 0)
+#define UTF8_MBFIRSTCHAR(c)	(((c) & 0xc0) == 0xc0)
+#define UTF8_MBCHAR(c)		(((c) & 0xc0) == 0x80)
 
 #else /* !HANDLE_MULTIBYTE */
 
@@ -146,6 +211,12 @@ extern int _rl_walphabetic PARAMS((wchar_t));
 
 #define MB_INVALIDCH(x)		(0)
 #define MB_NULLWCH(x)		(0)
+
+#define UTF8_SINGLEBYTE(c)	(1)
+
+#if !defined (HAVE_WCHAR_T) && !defined (wchar_t)
+#  define wchar_t int
+#endif
 
 #endif /* !HANDLE_MULTIBYTE */
 

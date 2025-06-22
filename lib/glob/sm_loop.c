@@ -1,4 +1,4 @@
-/* Copyright (C) 1991-2006 Free Software Foundation, Inc.
+/* Copyright (C) 1991-2021 Free Software Foundation, Inc.
 
    This file is part of GNU Bash, the Bourne Again SHell.
    
@@ -16,13 +16,24 @@
    along with Bash.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-int FCT __P((CHAR *, CHAR *, int));
+extern int interrupt_state, terminating_signal;
 
-static int GMATCH __P((CHAR *, CHAR *, CHAR *, CHAR *, int));
-static CHAR *PARSE_COLLSYM __P((CHAR *, INT *));
-static CHAR *BRACKMATCH __P((CHAR *, U_CHAR, int));
-static int EXTMATCH __P((INT, CHAR *, CHAR *, CHAR *, CHAR *, int));
-static CHAR *PATSCAN __P((CHAR *, CHAR *, INT));
+struct STRUCT
+{
+  CHAR *pattern;
+  CHAR *string;
+};
+
+int FCT PARAMS((CHAR *, CHAR *, int));
+
+static int GMATCH PARAMS((CHAR *, CHAR *, CHAR *, CHAR *, struct STRUCT *, int));
+static CHAR *PARSE_COLLSYM PARAMS((CHAR *, INT *));
+static CHAR *BRACKMATCH PARAMS((CHAR *, U_CHAR, int));
+static int EXTMATCH PARAMS((INT, CHAR *, CHAR *, CHAR *, CHAR *, int));
+
+extern void DEQUOTE_PATHNAME PARAMS((CHAR *));
+
+/*static*/ CHAR *PATSCAN PARAMS((CHAR *, CHAR *, INT));
 
 int
 FCT (pattern, string, flags)
@@ -38,15 +49,16 @@ FCT (pattern, string, flags)
   se = string + STRLEN ((XCHAR *)string);
   pe = pattern + STRLEN ((XCHAR *)pattern);
 
-  return (GMATCH (string, se, pattern, pe, flags));
+  return (GMATCH (string, se, pattern, pe, (struct  STRUCT *)NULL, flags));
 }
 
 /* Match STRING against the filename pattern PATTERN, returning zero if
    it matches, FNM_NOMATCH if not.  */
 static int
-GMATCH (string, se, pattern, pe, flags)
+GMATCH (string, se, pattern, pe, ends, flags)
      CHAR *string, *se;
      CHAR *pattern, *pe;
+     struct STRUCT *ends;
      int flags;
 {
   CHAR *p, *n;		/* pattern, string */
@@ -71,6 +83,9 @@ fprintf(stderr, "gmatch: pattern = %s; pe = %s\n", pattern, pe);
 
       sc = n < se ? *n : '\0';
 
+      if (interrupt_state || terminating_signal)
+	return FNM_NOMATCH;
+
 #ifdef EXTENDED_GLOB
       /* EXTMATCH () will handle recursively calling GMATCH, so we can
 	 just return what EXTMATCH() returns. */
@@ -80,7 +95,7 @@ fprintf(stderr, "gmatch: pattern = %s; pe = %s\n", pattern, pe);
 	  int lflags;
 	  /* If we're not matching the start of the string, we're not
 	     concerned about the special cases for matching `.' */
-	  lflags = (n == string) ? flags : (flags & ~FNM_PERIOD);
+	  lflags = (n == string) ? flags : (flags & ~(FNM_PERIOD|FNM_DOTDOT));
 	  return (EXTMATCH (c, n, se, p, pe, lflags));
 	}
 #endif /* EXTENDED_GLOB */
@@ -99,9 +114,21 @@ fprintf(stderr, "gmatch: pattern = %s; pe = %s\n", pattern, pe);
 	       string or if it is the first character following a slash and
 	       we are matching a pathname. */
 	    return FNM_NOMATCH;
+
+	  /* `?' cannot match `.' or `..' if it is the first character of the
+	     string or if it is the first character following a slash and
+	     we are matching a pathname. */
+	  if ((flags & FNM_DOTDOT) &&
+	      ((n == string && SDOT_OR_DOTDOT(n)) ||
+	       ((flags & FNM_PATHNAME) && n[-1] == L('/') && PDOT_OR_DOTDOT(n))))
+	    return FNM_NOMATCH;
+
 	  break;
 
 	case L('\\'):		/* backslash escape removes special meaning */
+	  if (p == pe && sc == '\\' && (n+1 == se))
+	    break;
+
 	  if (p == pe)
 	    return FNM_NOMATCH;
 
@@ -117,16 +144,33 @@ fprintf(stderr, "gmatch: pattern = %s; pe = %s\n", pattern, pe);
 	    return FNM_NOMATCH;
 	  break;
 
-	case '*':		/* Match zero or more characters */
-	  if (p == pe)
-	    return 0;
-	  
+	case L('*'):		/* Match zero or more characters */
+	  /* See below for the reason for using this. It avoids backtracking
+	     back to a previous `*'.  Picked up from glibc. */
+	  if (ends != NULL)
+	    {
+	      ends->pattern = p - 1;
+	      ends->string = n;
+	      return (0);
+	    }
+
 	  if ((flags & FNM_PERIOD) && sc == L('.') &&
 	      (n == string || ((flags & FNM_PATHNAME) && n[-1] == L('/'))))
 	    /* `*' cannot match a `.' if it is the first character of the
 	       string or if it is the first character following a slash and
 	       we are matching a pathname. */
 	    return FNM_NOMATCH;
+
+	  /* `*' cannot match `.' or `..' if it is the first character of the
+	     string or if it is the first character following a slash and
+	     we are matching a pathname. */
+	  if ((flags & FNM_DOTDOT) &&
+	      ((n == string && SDOT_OR_DOTDOT(n)) ||
+	       ((flags & FNM_PATHNAME) && n[-1] == L('/') && PDOT_OR_DOTDOT(n))))
+	    return FNM_NOMATCH;
+
+	  if (p == pe)
+	    return 0;
 
 	  /* Collapse multiple consecutive `*' and `?', but make sure that
 	     one character of the string is consumed for each `?'. */
@@ -139,13 +183,18 @@ fprintf(stderr, "gmatch: pattern = %s; pe = %s\n", pattern, pe);
 	      else if ((flags & FNM_EXTMATCH) && c == L('?') && *p == L('(')) /* ) */
 		{
 		  CHAR *newn;
-		  for (newn = n; newn < se; ++newn)
-		    {
-		      if (EXTMATCH (c, newn, se, p, pe, flags) == 0)
-			return (0);
-		    }
-		  /* We didn't match.  If we have a `?(...)', that's failure. */
-		  return FNM_NOMATCH;
+
+		  /* We can match 0 or 1 times.  If we match, return success */
+		  if (EXTMATCH (c, n, se, p, pe, flags) == 0)
+		    return (0);
+
+		  /* We didn't match the extended glob pattern, but
+		     that's OK, since we can match 0 or 1 occurrences.
+		     We need to skip the glob pattern and see if we
+		     match the rest of the string. */
+		  newn = PATSCAN (p + 1, pe, 0);
+		  /* If NEWN is 0, we have an ill-formed pattern. */
+		  p = newn ? newn : pe;
 		}
 #endif
 	      else if (c == L('?'))
@@ -185,19 +234,67 @@ fprintf(stderr, "gmatch: pattern = %s; pe = %s\n", pattern, pe);
 		break;
 	    }
 
+	  /* The wildcards are the last element of the pattern.  The name
+	     cannot match completely if we are looking for a pathname and
+	     it contains another slash, unless FNM_LEADING_DIR is set. */
+	  if (c == L('\0'))
+	    {
+	      int r = (flags & FNM_PATHNAME) == 0 ? 0 : FNM_NOMATCH;
+	      if (flags & FNM_PATHNAME)
+		{
+		  if (flags & FNM_LEADING_DIR)
+		    r = 0;
+		  else if (MEMCHR (n, L('/'), se - n) == NULL)
+		    r = 0;
+		}
+	      return r;
+	    }
+
 	  /* If we've hit the end of the pattern and the last character of
 	     the pattern was handled by the loop above, we've succeeded.
 	     Otherwise, we need to match that last character. */
 	  if (p == pe && (c == L('?') || c == L('*')))
 	    return (0);
 
+	  /* If we've hit the end of the string and the rest of the pattern
+	     is something that matches the empty string, we can succeed. */
+#if defined (EXTENDED_GLOB)
+	  if (n == se && ((flags & FNM_EXTMATCH) && (c == L('!') || c == L('?')) && *p == L('(')))
+	    {
+	      --p;
+	      if (EXTMATCH (c, n, se, p, pe, flags) == 0)
+		return (c == L('!') ? FNM_NOMATCH : 0);
+	      return (c == L('!') ? 0 : FNM_NOMATCH);
+	    }
+#endif
+
+	  /* If we stop at a slash in the pattern and we are looking for a
+	     pathname ([star]/foo), then consume enough of the string to stop
+	     at any slash and then try to match the rest of the pattern.  If
+	     the string doesn't contain a slash, fail */
+	  if (c == L('/') && (flags & FNM_PATHNAME))
+	    {
+	      while (n < se && *n != L('/'))
+		++n;
+	      if (n < se && *n == L('/') && (GMATCH (n+1, se, p, pe, NULL, flags) == 0))
+		return 0;
+	      return FNM_NOMATCH;	/* XXX */
+	    }
+
 	  /* General case, use recursion. */
 	  {
 	    U_CHAR c1;
+	    const CHAR *endp;
+	    struct STRUCT end;
+
+	    end.pattern = NULL;
+	    endp = MEMCHR (n, (flags & FNM_PATHNAME) ? L('/') : L('\0'), se - n);
+	    if (endp == 0)
+	      endp = se;
 
 	    c1 = ((flags & FNM_NOESCAPE) == 0 && c == L('\\')) ? *p : c;
 	    c1 = FOLD (c1);
-	    for (--p; n < se; ++n)
+	    for (--p; n < endp; ++n)
 	      {
 		/* Only call strmatch if the first character indicates a
 		   possible match.  We can check the first character if
@@ -213,9 +310,24 @@ fprintf(stderr, "gmatch: pattern = %s; pe = %s\n", pattern, pe);
 		  continue;
 
 		/* Otherwise, we just recurse. */
-		if (GMATCH (n, se, p, pe, flags & ~FNM_PERIOD) == 0)
-		  return (0);
+		if (GMATCH (n, se, p, pe, &end, flags & ~(FNM_PERIOD|FNM_DOTDOT)) == 0)
+		  {
+		    if (end.pattern == NULL)
+		      return (0);
+		    break;
+		  }
 	      }
+	    /* This is a clever idea from glibc, used to avoid backtracking
+	       to a `*' that appears earlier in the pattern.  We get away
+	       without saving se and pe because they are always the same,
+	       even in the recursive calls to gmatch */ 
+	    if (end.pattern != NULL)
+	      {
+		p = end.pattern;
+		n = end.string;
+		continue;
+	      }
+
 	    return FNM_NOMATCH;
 	  }
 
@@ -230,6 +342,14 @@ fprintf(stderr, "gmatch: pattern = %s; pe = %s\n", pattern, pe);
 	    if ((flags & FNM_PERIOD) && sc == L('.') &&
 		(n == string || ((flags & FNM_PATHNAME) && n[-1] == L('/'))))
 	      return (FNM_NOMATCH);
+
+	    /* `?' cannot match `.' or `..' if it is the first character of the
+	       string or if it is the first character following a slash and
+	       we are matching a pathname. */
+	    if ((flags & FNM_DOTDOT) &&
+		((n == string && SDOT_OR_DOTDOT(n)) ||
+		((flags & FNM_PATHNAME) && n[-1] == L('/') && PDOT_OR_DOTDOT(n))))
+	      return FNM_NOMATCH;
 
 	    p = BRACKMATCH (p, sc, flags);
 	    if (p == 0)
@@ -271,6 +391,12 @@ PARSE_COLLSYM (p, vp)
   for (pc = 0; p[pc]; pc++)
     if (p[pc] == L('.') && p[pc+1] == L(']'))
       break;
+   if (p[pc] == 0)
+    {
+      if (vp)
+	*vp = INVALID;
+      return (p + pc);
+    }
    val = COLLSYM (p, pc);
    if (vp)
      *vp = val;
@@ -290,11 +416,14 @@ BRACKMATCH (p, test, flags)
 {
   register CHAR cstart, cend, c;
   register int not;    /* Nonzero if the sense of the character class is inverted.  */
-  int brcnt;
+  int brcnt, forcecoll, isrange;
   INT pc;
   CHAR *savep;
+  CHAR *brchrp;
+  U_CHAR orig_test;
 
-  test = FOLD (test);
+  orig_test = test;
+  test = FOLD (orig_test);
 
   savep = p;
 
@@ -311,6 +440,7 @@ BRACKMATCH (p, test, flags)
       /* Initialize cstart and cend in case `-' is the last
 	 character of the pattern. */
       cstart = cend = c;
+      forcecoll = 0;
 
       /* POSIX.2 equivalence class:  [=c=].  See POSIX.2 2.8.3.2.  Find
 	 the end of the equivalence class, move the pattern pointer past
@@ -358,12 +488,26 @@ BRACKMATCH (p, test, flags)
 		{
 		  bcopy (p + 1, ccname, (close - p - 1) * sizeof (CHAR));
 		  *(ccname + (close - p - 1)) = L('\0');
-		  pc = IS_CCLASS (test, (XCHAR *)ccname);
+		  /* As a result of a POSIX discussion, char class names are
+		     allowed to be quoted (?) */
+		  DEQUOTE_PATHNAME (ccname);
+		  pc = IS_CCLASS (orig_test, (XCHAR *)ccname);
 		}
 	      if (pc == -1)
-		pc = 0;
+		{
+		  /* CCNAME is not a valid character class in the current
+		     locale. In addition to noting no match (pc = 0), we have
+		     a choice about what to do with the invalid charclass.
+		     Posix leaves the behavior unspecified, but we're going
+		     to skip over the charclass and keep going instead of
+		     testing ORIG_TEST against each character in the class
+		     string. If we don't want to do that, take out the update
+		     of P. */
+		  pc = 0;
+		  p = close + 2;
+		}
 	      else
-		p = close + 2;
+		p = close + 2;		/* move past the closing `]' */
 
 	      free (ccname);
 	    }
@@ -400,6 +544,7 @@ BRACKMATCH (p, test, flags)
 	     range.  If it is, we set cstart to one greater than `test',
 	     so any comparisons later will fail. */
 	  cstart = (pc == INVALID) ? test + 1 : pc;
+	  forcecoll = 1;
 	}
 
       if (!(flags & FNM_NOESCAPE) && c == L('\\'))
@@ -410,6 +555,7 @@ BRACKMATCH (p, test, flags)
 	}
 
       cstart = cend = FOLD (cstart);
+      isrange = 0;
 
       /* POSIX.2 2.8.3.1.2 says: `An expression containing a `[' that
 	 is not preceded by a backslash and is not part of a bracket
@@ -421,6 +567,9 @@ BRACKMATCH (p, test, flags)
 
       c = *p++;
       c = FOLD (c);
+
+      if (c == L('\0'))
+	return ((test == L('[')) ? savep : (CHAR *)0);
 
       if ((flags & FNM_PATHNAME) && c == L('/'))
 	/* [/] can never match when matching a pathname.  */
@@ -443,6 +592,7 @@ BRACKMATCH (p, test, flags)
 		 range expression.  If we get one, we set cend to one fewer
 		 than the test character to make sure the range test fails. */
 	      cend = (pc == INVALID) ? test - 1 : pc;
+	      forcecoll = 1;
 	    }
 	  cend = FOLD (cend);
 
@@ -453,16 +603,19 @@ BRACKMATCH (p, test, flags)
 	     the expression shall be treated as invalid.''  Note that this
 	     applies to only the range expression; the rest of the bracket
 	     expression is still checked for matches. */
-	  if (RANGECMP (cstart, cend) > 0)
+	  if (RANGECMP (cstart, cend, forcecoll) > 0)
 	    {
 	      if (c == L(']'))
 		break;
 	      c = FOLD (c);
 	      continue;
 	    }
+	  isrange = 1;
 	}
 
-      if (RANGECMP (test, cstart) >= 0 && RANGECMP (test, cend) <= 0)
+      if (isrange == 0 && test == cstart)
+        goto matched;
+      if (isrange && RANGECMP (test, cstart, forcecoll) >= 0 && RANGECMP (test, cend, forcecoll) <= 0)
 	goto matched;
 
       if (c == L(']'))
@@ -475,17 +628,40 @@ matched:
   /* Skip the rest of the [...] that already matched.  */
   c = *--p;
   brcnt = 1;
+  brchrp = 0;
   while (brcnt > 0)
     {
+      int oc;
+
       /* A `[' without a matching `]' is just another character to match. */
       if (c == L('\0'))
 	return ((test == L('[')) ? savep : (CHAR *)0);
 
+      oc = c;
       c = *p++;
       if (c == L('[') && (*p == L('=') || *p == L(':') || *p == L('.')))
-	brcnt++;
-      else if (c == L(']'))
-	brcnt--;
+	{
+	  brcnt++;
+	  brchrp = p++;		/* skip over the char after the left bracket */
+	  if ((c = *p) == L('\0'))
+	    return ((test == L('[')) ? savep : (CHAR *)0);
+	  /* If *brchrp == ':' we should check that the rest of the characters
+	     form a valid character class name. We don't do that yet, but we
+	     keep BRCHRP in case we want to. */
+	}
+      /* We only want to check brchrp if we set it above. */
+      else if (c == L(']') && brcnt > 1 && brchrp != 0 && oc == *brchrp)
+	{
+	  brcnt--;
+	  brchrp = 0;		/* just in case */
+	}
+      /* Left bracket loses its special meaning inside a bracket expression.
+         It is only valid when followed by a `.', `=', or `:', which we check
+         for above. Technically the right bracket can appear in a collating
+         symbol, so we check for that here. Otherwise, it terminates the
+         bracket expression. */
+      else if (c == L(']') && (brchrp == 0 || *brchrp != L('.')) && brcnt >= 1)
+	brcnt = 0;
       else if (!(flags & FNM_NOESCAPE) && c == L('\\'))
 	{
 	  if (*p == '\0')
@@ -516,8 +692,9 @@ matched:
    embedded () and [].  If DELIM is 0, we scan until a matching `)'
    because we're scanning a `patlist'.  Otherwise, we scan until we see
    DELIM.  In all cases, we never scan past END.  The return value is the
-   first character after the matching DELIM. */
-static CHAR *
+   first character after the matching DELIM or NULL if the pattern is
+   empty or invalid. */
+/*static*/ CHAR *
 PATSCAN (string, end, delim)
      CHAR *string, *end;
      INT delim;
@@ -529,6 +706,9 @@ PATSCAN (string, end, delim)
   pnest = bnest = skip = 0;
   cchar = 0;
   bfirst = NULL;
+
+  if (string == end)
+    return (NULL);
 
   for (s = string; c = *s; s++)
     {
@@ -606,19 +786,32 @@ STRCOMPARE (p, pe, s, se)
 {
   int ret;
   CHAR c1, c2;
+  int l1, l2;
 
+  l1 = pe - p;
+  l2 = se - s;
+
+  if (l1 != l2)
+    return (FNM_NOMATCH);	/* unequal lengths, can't be identical */
+  
   c1 = *pe;
   c2 = *se;
 
-  *pe = *se = '\0';
+  if (c1 != 0)
+    *pe = '\0';
+  if (c2 != 0)
+    *se = '\0';
+    
 #if HAVE_MULTIBYTE || defined (HAVE_STRCOLL)
   ret = STRCOLL ((XCHAR *)p, (XCHAR *)s);
 #else
   ret = STRCMP ((XCHAR *)p, (XCHAR *)s);
 #endif
 
-  *pe = c1;
-  *se = c2;
+  if (c1 != 0)
+    *pe = c1;
+  if (c2 != 0)
+    *se = c2;
 
   return (ret == 0 ? ret : FNM_NOMATCH);
 }
@@ -660,7 +853,7 @@ fprintf(stderr, "extmatch: flags = %d\n", flags);
       /* If we can get away with no matches, don't even bother.  Just
 	 call GMATCH on the rest of the pattern and return success if
 	 it succeeds. */
-      if (xc == L('*') && (GMATCH (s, se, prest, pe, flags) == 0))
+      if (xc == L('*') && (GMATCH (s, se, prest, pe, NULL, flags) == 0))
 	return 0;
 
       /* OK, we have to do this the hard way.  First, we make sure one of
@@ -673,16 +866,16 @@ fprintf(stderr, "extmatch: flags = %d\n", flags);
 	    {
 	      /* Match this substring (S -> SREST) against this
 		 subpattern (psub -> pnext - 1) */
-	      m1 = GMATCH (s, srest, psub, pnext - 1, flags) == 0;
+	      m1 = GMATCH (s, srest, psub, pnext - 1, NULL, flags) == 0;
 	      /* OK, we matched a subpattern, so make sure the rest of the
 		 string matches the rest of the pattern.  Also handle
 		 multiple matches of the pattern. */
 	      if (m1)
 		{
 		  /* if srest > s, we are not at start of string */
-		  xflags = (srest > s) ? (flags & ~FNM_PERIOD) : flags;
-		  m2 = (GMATCH (srest, se, prest, pe, xflags) == 0) ||
-			(s != srest && GMATCH (srest, se, p - 1, pe, xflags) == 0);
+		  xflags = (srest > s) ? (flags & ~(FNM_PERIOD|FNM_DOTDOT)) : flags;
+		  m2 = (GMATCH (srest, se, prest, pe, NULL, xflags) == 0) ||
+			(s != srest && GMATCH (srest, se, p - 1, pe, NULL, xflags) == 0);
 		}
 	      if (m1 && m2)
 		return (0);
@@ -697,7 +890,7 @@ fprintf(stderr, "extmatch: flags = %d\n", flags);
       /* If we can get away with no matches, don't even bother.  Just
 	 call gmatch on the rest of the pattern and return success if
 	 it succeeds. */
-      if (xc == L('?') && (GMATCH (s, se, prest, pe, flags) == 0))
+      if (xc == L('?') && (GMATCH (s, se, prest, pe, NULL, flags) == 0))
 	return 0;
 
       /* OK, we have to do this the hard way.  First, we see if one of
@@ -710,9 +903,9 @@ fprintf(stderr, "extmatch: flags = %d\n", flags);
 	  for ( ; srest <= se; srest++)
 	    {
 	      /* if srest > s, we are not at start of string */
-	      xflags = (srest > s) ? (flags & ~FNM_PERIOD) : flags;
-	      if (GMATCH (s, srest, psub, pnext - 1, flags) == 0 &&
-		  GMATCH (srest, se, prest, pe, xflags) == 0)
+	      xflags = (srest > s) ? (flags & ~(FNM_PERIOD|FNM_DOTDOT)) : flags;
+	      if (GMATCH (s, srest, psub, pnext - 1, NULL, flags) == 0 &&
+		  GMATCH (srest, se, prest, pe, NULL, xflags) == 0)
 		return (0);
 	    }
 	  if (pnext == prest)
@@ -728,14 +921,26 @@ fprintf(stderr, "extmatch: flags = %d\n", flags);
 	    {
 	      pnext = PATSCAN (psub, pe, L('|'));
 	      /* If one of the patterns matches, just bail immediately. */
-	      if (m1 = (GMATCH (s, srest, psub, pnext - 1, flags) == 0))
+	      if (m1 = (GMATCH (s, srest, psub, pnext - 1, NULL, flags) == 0))
 		break;
 	      if (pnext == prest)
 		break;
 	    }
+
+	  /* If nothing matched, but the string starts with a period and we
+	     need to match periods explicitly, don't return this as a match,
+	     even for negation. */
+	  if (m1 == 0 && (flags & FNM_PERIOD) && *s == '.')
+	    return (FNM_NOMATCH);
+
+	  if (m1 == 0 && (flags & FNM_DOTDOT) &&
+	      (SDOT_OR_DOTDOT (s) ||
+	       ((flags & FNM_PATHNAME) && s[-1] == L('/') && PDOT_OR_DOTDOT(s))))
+	    return (FNM_NOMATCH);
+
 	  /* if srest > s, we are not at start of string */
-	  xflags = (srest > s) ? (flags & ~FNM_PERIOD) : flags;
-	  if (m1 == 0 && GMATCH (srest, se, prest, pe, xflags) == 0)
+	  xflags = (srest > s) ? (flags & ~(FNM_PERIOD|FNM_DOTDOT)) : flags;
+	  if (m1 == 0 && GMATCH (srest, se, prest, pe, NULL, xflags) == 0)
 	    return (0);
 	}
       return (FNM_NOMATCH);
@@ -759,11 +964,18 @@ fprintf(stderr, "extmatch: flags = %d\n", flags);
 #undef PATSCAN
 #undef STRCOMPARE
 #undef EXTMATCH
+#undef DEQUOTE_PATHNAME
+#undef STRUCT
 #undef BRACKMATCH
 #undef STRCHR
 #undef STRCOLL
 #undef STRLEN
 #undef STRCMP
+#undef MEMCHR
 #undef COLLEQUIV
 #undef RANGECMP
+#undef ISDIRSEP
+#undef PATHSEP
+#undef PDOT_OR_DOTDOT
+#undef SDOT_OR_DOTDOT
 #undef L

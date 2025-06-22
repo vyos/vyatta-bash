@@ -1,7 +1,7 @@
 This file is fc.def, from which is created fc.c.
 It implements the builtin "fc" in Bash.
 
-Copyright (C) 1987-2009 Free Software Foundation, Inc.
+Copyright (C) 1987-2021 Free Software Foundation, Inc.
 
 This file is part of GNU Bash, the Bourne Again SHell.
 
@@ -52,7 +52,7 @@ $END
 #include <config.h>
 
 #if defined (HISTORY)
-#ifndef _MINIX
+#if defined (HAVE_SYS_PARAM_H)
 #  include <sys/param.h>
 #endif
 #include "../bashtypes.h"
@@ -75,6 +75,7 @@ $END
 #include "../shell.h"
 #include "../builtins.h"
 #include "../flags.h"
+#include "../parser.h"
 #include "../bashhist.h"
 #include "maxpath.h"
 #include <readline/history.h>
@@ -85,14 +86,19 @@ $END
 extern int errno;
 #endif /* !errno */
 
-extern int current_command_line_count;
-extern int literal_history;
-extern int posixly_correct;
-extern int subshell_environment, interactive_shell;
+#define HIST_INVALID INT_MIN
+#define HIST_ERANGE  INT_MIN+1
+#define HIST_NOTFOUND INT_MIN+2
 
-extern int unlink __P((const char *));
+/* Values for the flags argument to fc_gethnum */
+#define HN_LISTING	0x01
+#define HN_FIRST	0x02
 
-extern FILE *sh_mktmpfp __P((char *, int, char **));
+extern int unlink PARAMS((const char *));
+
+extern FILE *sh_mktmpfp PARAMS((char *, int, char **));
+
+extern int suppress_debug_trap_verbose;
 
 /* **************************************************************** */
 /*								    */
@@ -148,15 +154,21 @@ typedef struct repl {
 		} \
 	} while (0)
 
-static char *fc_dosubs __P((char *, REPL *));
-static char *fc_gethist __P((char *, HIST_ENTRY **));
-static int fc_gethnum __P((char *, HIST_ENTRY **));
-static int fc_number __P((WORD_LIST *));
-static void fc_replhist __P((char *));
+static char *fc_dosubs PARAMS((char *, REPL *));
+static char *fc_gethist PARAMS((char *, HIST_ENTRY **, int));
+static int fc_gethnum PARAMS((char *, HIST_ENTRY **, int));
+static int fc_number PARAMS((WORD_LIST *));
+static void fc_replhist PARAMS((char *));
 #ifdef INCLUDE_UNUSED
-static char *fc_readline __P((FILE *));
-static void fc_addhist __P((char *));
+static char *fc_readline PARAMS((FILE *));
+static void fc_addhist PARAMS((char *));
 #endif
+
+static void
+set_verbose_flag ()
+{
+  echo_input_at_read = verbose_flag;
+}
 
 /* String to execute on a file that we want to edit. */
 #define FC_EDIT_COMMAND "${FCEDIT:-${EDITOR:-vi}}"
@@ -173,7 +185,7 @@ fc_builtin (list)
   register int i;
   register char *sep;
   int numbering, reverse, listing, execute;
-  int histbeg, histend, last_hist, retval, opt, rh;
+  int histbeg, histend, last_hist, retval, opt, rh, real_last;
   FILE *stream;
   REPL *rlist, *rl;
   char *ename, *command, *newcom, *fcedit;
@@ -197,7 +209,7 @@ fc_builtin (list)
 	  break;
 
 	case 'l':
-	  listing = 1;
+	  listing = HN_LISTING;		/* for fc_gethnum */
 	  break;
 
 	case 'r':
@@ -212,6 +224,7 @@ fc_builtin (list)
 	  ename = list_optarg;
 	  break;
 
+	CASE_HELPOPT;
 	default:
 	  builtin_usage ();
 	  return (EX_USAGE);
@@ -255,7 +268,7 @@ fc_builtin (list)
 
       /* If we still have something in list, it is a command spec.
 	 Otherwise, we use the most recent command in time. */
-      command = fc_gethist (list ? list->word->word : (char *)NULL, hlist);
+      command = fc_gethist (list ? list->word->word : (char *)NULL, hlist, 0);
 
       if (command == NULL)
 	{
@@ -303,13 +316,30 @@ fc_builtin (list)
   rh = remember_on_history || ((subshell_environment & SUBSHELL_COMSUB) && enable_history_list);
   last_hist = i - rh - hist_last_line_added;
 
+  /* Make sure that real_last is calculated the same way here and in
+     fc_gethnum.  The return value from fc_gethnum is treated specially if
+     it is == real_last and we are listing commands. */
+  real_last = i;
+  /* back up from the end to the last non-null history entry */
+  while (hlist[real_last] == 0 && real_last > 0)
+    real_last--;
+
+  /* XXX */
+  if (i == last_hist && hlist[last_hist] == 0)
+    while (last_hist >= 0 && hlist[last_hist] == 0)
+      last_hist--;
+  if (last_hist < 0)
+    last_hist = 0;		/* per POSIX */
+
   if (list)
     {
-      histbeg = fc_gethnum (list->word->word, hlist);
+      histbeg = fc_gethnum (list->word->word, hlist, listing|HN_FIRST);
       list = list->next;
 
       if (list)
-	histend = fc_gethnum (list->word->word, hlist);
+	histend = fc_gethnum (list->word->word, hlist, listing);
+      else if (histbeg == real_last)
+	histend = listing ? real_last : histbeg;
       else
 	histend = listing ? last_hist : histbeg;
     }
@@ -328,6 +358,28 @@ fc_builtin (list)
 	histbeg = histend = last_hist;
     }
 
+  if (histbeg == HIST_INVALID || histend == HIST_INVALID)
+    {
+      sh_erange ((char *)NULL, _("history specification")); 
+      return (EXECUTION_FAILURE);
+    }
+  else if (histbeg == HIST_ERANGE || histend == HIST_ERANGE)
+    {
+      sh_erange ((char *)NULL, _("history specification"));
+      return (EXECUTION_FAILURE);
+    }
+  else if (histbeg == HIST_NOTFOUND || histend == HIST_NOTFOUND)
+    {
+      builtin_error (_("no command found"));
+      return (EXECUTION_FAILURE);
+    }
+
+  /* We don't throw an error for line specifications out of range, per POSIX */
+  if (histbeg < 0)
+    histbeg = 0;
+  if (histend < 0)
+    histend = 0;
+
   /* "When not listing, the fc command that caused the editing shall not be
      entered into the history list." */
   if (listing == 0 && hist_last_line_added)
@@ -341,14 +393,36 @@ fc_builtin (list)
 	 in parse_and_execute(). */
       if (histbeg == histend && histend == last_hist && hlist[last_hist] == 0)
 	last_hist = histbeg = --histend;
+
+      if (hlist[last_hist] == 0)
+	last_hist--;
+      if (histend >= last_hist)
+	histend = last_hist;
+      else if (histbeg >= last_hist)
+	histbeg = last_hist;
     }
 
-  /* We print error messages for line specifications out of range. */
-  if ((histbeg < 0) || (histend < 0))
+  if (histbeg == HIST_INVALID || histend == HIST_INVALID)
+    {
+      sh_erange ((char *)NULL, _("history specification")); 
+      return (EXECUTION_FAILURE);
+    }
+  else if (histbeg == HIST_ERANGE || histend == HIST_ERANGE)
     {
       sh_erange ((char *)NULL, _("history specification"));
       return (EXECUTION_FAILURE);
     }
+  else if (histbeg == HIST_NOTFOUND || histend == HIST_NOTFOUND)
+    {
+      builtin_error (_("no command found"));
+      return (EXECUTION_FAILURE);
+    }
+
+  /* We don't throw an error for line specifications out of range, per POSIX */
+  if (histbeg < 0)
+    histbeg = 0;
+  if (histend < 0)
+    histend = 0;
 
   if (histend < histbeg)
     {
@@ -376,6 +450,8 @@ fc_builtin (list)
   for (i = reverse ? histend : histbeg; reverse ? i >= histbeg : i <= histend; reverse ? i-- : i++)
     {
       QUIT;
+      if (hlist[i] == 0)
+	continue;
       if (numbering)
 	fprintf (stream, "%d", i + history_base);
       if (listing)
@@ -385,7 +461,8 @@ fc_builtin (list)
 	  else
 	    fprintf (stream, "\t%c", histdata (i) ? '*' : ' ');
 	}
-      fprintf (stream, "%s\n", histline (i));
+      if (histline (i))
+	fprintf (stream, "%s\n", histline (i));
     }
 
   if (listing)
@@ -396,6 +473,7 @@ fc_builtin (list)
     {
       sh_wrerror ();
       fclose (stream);
+      FREE (fn);
       return (EXECUTION_FAILURE);
     }
   fclose (stream);
@@ -420,6 +498,13 @@ fc_builtin (list)
       return (EXECUTION_FAILURE);
     }
 
+#if defined (READLINE)
+  /* If we're executing as part of a dispatched readline command like
+     {emacs,vi}_edit_and_execute_command, the readline state will indicate it.
+     We could remove the partial command from the history, but ksh93 doesn't
+     so we stay compatible. */
+#endif
+
   /* Make sure parse_and_execute doesn't turn this off, even though a
      call to parse_and_execute farther up the function call stack (e.g.,
      if this is called by vi_edit_and_execute_command) may have already
@@ -429,13 +514,14 @@ fc_builtin (list)
   /* Turn on the `v' flag while fc_execute_file runs so the commands
      will be echoed as they are read by the parser. */
   begin_unwind_frame ("fc builtin");
-  add_unwind_protect ((Function *)xfree, fn);
+  add_unwind_protect (xfree, fn);
   add_unwind_protect (unlink, fn);
-  unwind_protect_int (echo_input_at_read);
+  add_unwind_protect (set_verbose_flag, (char *)NULL);
+  unwind_protect_int (suppress_debug_trap_verbose);
   echo_input_at_read = 1;
-    
-  retval = fc_execute_file (fn);
+  suppress_debug_trap_verbose = 1;
 
+  retval = fc_execute_file (fn);
   run_unwind_frame ("fc builtin");
 
   return (retval);
@@ -458,16 +544,21 @@ fc_number (list)
 
 /* Return an absolute index into HLIST which corresponds to COMMAND.  If
    COMMAND is a number, then it was specified in relative terms.  If it
-   is a string, then it is the start of a command line present in HLIST. */
+   is a string, then it is the start of a command line present in HLIST.
+   MODE includes HN_LISTING if we are listing commands, and does not if we
+   are executing them. If MODE includes HN_FIRST we are looking for the
+   first history number specification. */
 static int
-fc_gethnum (command, hlist)
+fc_gethnum (command, hlist, mode)
      char *command;
      HIST_ENTRY **hlist;
+     int mode;
 {
   int sign, n, clen, rh;
-  register int i, j;
+  register int i, j, last_hist, real_last, listing;
   register char *s;
 
+  listing = mode & HN_LISTING;
   sign = 1;
   /* Count history elements. */
   for (i = 0; hlist[i]; i++);
@@ -485,11 +576,24 @@ fc_gethnum (command, hlist)
      has been enabled (interactive or not) should use it in the last_hist
      calculation as if it were on. */
   rh = remember_on_history || ((subshell_environment & SUBSHELL_COMSUB) && enable_history_list);
-  i -= rh + hist_last_line_added;
+  last_hist = i - rh - hist_last_line_added;
+
+  if (i == last_hist && hlist[last_hist] == 0)
+    while (last_hist >= 0 && hlist[last_hist] == 0)
+      last_hist--;
+  if (last_hist < 0)
+    return (-1);
+
+  real_last = i;
+  i = last_hist;
 
   /* No specification defaults to most recent command. */
   if (command == NULL)
     return (i);
+
+  /* back up from the end to the last non-null history entry */
+  while (hlist[real_last] == 0 && real_last > 0)
+    real_last--;
 
   /* Otherwise, there is a specification.  It can be a number relative to
      the current position, or an absolute history number. */
@@ -507,19 +611,33 @@ fc_gethnum (command, hlist)
       n = atoi (s);
       n *= sign;
 
+      /* We want to return something that is an offset to HISTORY_BASE. */
+
       /* If the value is negative or zero, then it is an offset from
 	 the current history item. */
+      /* We don't use HN_FIRST here, so we don't return different values
+	 depending on whether we're looking for the first or last in a
+	 pair of range arguments, but nobody else does, either. */
       if (n < 0)
 	{
 	  n += i + 1;
 	  return (n < 0 ? 0 : n);
 	}
       else if (n == 0)
-	return (i);
+	return ((sign == -1) ? (listing ? real_last : HIST_INVALID) : i);
       else
 	{
+	  /* If we're out of range (greater than I (last history entry) or
+	     less than HISTORY_BASE, we want to return different values
+	     based on whether or not we are looking for the first or last
+	     value in a desired range of history entries. */
 	  n -= history_base;
-	  return (i < n ? i : n);
+	  if (n < 0)
+	    return (mode & HN_FIRST ? 0 : i);
+	  else if (n >= i)
+	    return (mode & HN_FIRST ? 0 : i);
+	  else
+	    return n;
 	}
     }
 
@@ -529,22 +647,24 @@ fc_gethnum (command, hlist)
       if (STREQN (command, histline (j), clen))
 	return (j);
     }
-  return (-1);
+  return (HIST_NOTFOUND);
 }
 
 /* Locate the most recent history line which begins with
-   COMMAND in HLIST, and return a malloc()'ed copy of it. */
+   COMMAND in HLIST, and return a malloc()'ed copy of it.
+   MODE is 1 if we are listing commands, 0 if we are executing them. */
 static char *
-fc_gethist (command, hlist)
+fc_gethist (command, hlist, mode)
      char *command;
      HIST_ENTRY **hlist;
+     int mode;
 {
   int i;
 
   if (hlist == 0)
     return ((char *)NULL);
 
-  i = fc_gethnum (command, hlist);
+  i = fc_gethnum (command, hlist, mode);
 
   if (i >= 0)
     return (savestring (histline (i)));

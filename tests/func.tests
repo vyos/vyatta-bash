@@ -1,3 +1,22 @@
+#   This program is free software: you can redistribute it and/or modify
+#   it under the terms of the GNU General Public License as published by
+#   the Free Software Foundation, either version 3 of the License, or
+#   (at your option) any later version.
+#
+#   This program is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty of
+#   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#   GNU General Public License for more details.
+#
+#   You should have received a copy of the GNU General Public License
+#   along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+# since we look at functions below, remove all functions now 
+funcs=$(compgen -A function)
+if [ -n "$funcs" ]; then
+        unset -f $funcs
+fi
+
 a()
 {
 	x=$((x - 1))
@@ -156,6 +175,9 @@ ${THIS_SH} ./func2.sub
 
 # test for some posix-specific function behavior
 ${THIS_SH} ./func3.sub
+
+# FUNCNEST testing
+${THIS_SH} ./func4.sub
 
 unset -f myfunction
 myfunction() {

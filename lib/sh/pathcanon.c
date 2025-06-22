@@ -21,7 +21,7 @@
 #include <config.h>
 
 #include <bashtypes.h>
-#ifndef _MINIX
+#if defined (HAVE_SYS_PARAM_H)
 #  include <sys/param.h>
 #endif
 #include <posixstat.h>
@@ -90,7 +90,7 @@ _path_isdir (path)
 
 /* Canonicalize PATH, and return a new path.  The new path differs from PATH
    in that:
-	Multple `/'s are collapsed to a single `/'.
+	Multiple `/'s are collapsed to a single `/'.
 	Leading `./'s and trailing `/.'s are removed.
 	Trailing `/'s are removed.
 	Non-leading `../'s and trailing `..'s are handled by removing
@@ -227,7 +227,7 @@ sh_canonpath (path, flags)
       if (result[2] == '\0')	/* short-circuit for bare `//' */
 	result[1] = '\0';
       else
-	strcpy (result, result + 1);
+	memmove (result, result + 1, strlen (result + 1) + 1);
     }
 
   return (result);

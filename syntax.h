@@ -1,6 +1,6 @@
 /* syntax.h -- Syntax definitions for the shell */
 
-/* Copyright (C) 2000, 2001, 2005, 2008,2009 Free Software Foundation, Inc.
+/* Copyright (C) 2000, 2001, 2005, 2008, 2009-2020 Free Software Foundation, Inc.
 
    This file is part of GNU Bash, the Bourne Again SHell.
 
@@ -74,6 +74,8 @@ extern int sh_syntabsiz;
 #define shellxquote(c)	(sh_syntaxtab[(unsigned char)(c)] & CXQUOTE)
 
 #define shellblank(c)	(sh_syntaxtab[(unsigned char)(c)] & CBLANK)
+
+#define parserblank(c)	((c) == ' ' || (c) == '\t')
 
 #define issyntype(c, t)	((sh_syntaxtab[(unsigned char)(c)] & (t)) != 0)
 #define notsyntype(c,t) ((sh_syntaxtab[(unsigned char)(c)] & (t)) == 0)

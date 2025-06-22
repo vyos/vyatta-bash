@@ -1,6 +1,6 @@
 /* bashjmp.h -- wrapper for setjmp.h with necessary bash definitions. */
 
-/* Copyright (C) 1987-2009 Free Software Foundation, Inc.
+/* Copyright (C) 1987-2021 Free Software Foundation, Inc.
 
    This file is part of GNU Bash, the Bourne Again SHell.
 
@@ -26,8 +26,11 @@
 extern procenv_t	top_level;
 extern procenv_t	subshell_top_level;
 extern procenv_t	return_catch;	/* used by `return' builtin */
+extern procenv_t	wait_intr_buf;
 
-#define SHFUNC_RETURN()	longjmp (return_catch, 1)
+extern int no_longjmp_on_fatal_error;
+
+#define SHFUNC_RETURN()	sh_longjmp (return_catch, 1)
 
 #define COPY_PROCENV(old, save) \
 	xbcopy ((char *)old, (char *)save, sizeof (procenv_t));
@@ -39,5 +42,6 @@ extern procenv_t	return_catch;	/* used by `return' builtin */
 #define EXITPROG	3	/* Unconditionally exit the program now. */
 #define ERREXIT		4	/* Exit due to error condition */	
 #define SIGEXIT		5	/* Exit due to fatal terminating signal */
+#define EXITBLTIN	6	/* Exit due to the exit builtin. */
 
 #endif /* _BASHJMP_H_ */

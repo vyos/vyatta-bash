@@ -3,7 +3,7 @@
 /* See Makefile for compilation details. */
 
 /*
-   Copyright (C) 1999-2009 Free Software Foundation, Inc.
+   Copyright (C) 1999-2020 Free Software Foundation, Inc.
 
    This file is part of GNU Bash.
    Bash is free software: you can redistribute it and/or modify
@@ -42,14 +42,16 @@
 extern int errno;
 #endif
 
-typedef int unix_link_syscall_t __P((const char *, const char *));
+typedef int unix_link_syscall_t PARAMS((const char *, const char *));
 
 #define LN_SYMLINK 0x01
 #define LN_UNLINK  0x02
+#define LN_NOFOLLOW 0x04
 
 static unix_link_syscall_t *linkfn;
 static int dolink ();
 
+int
 ln_builtin (list)
      WORD_LIST *list;
 {
@@ -70,6 +72,11 @@ ln_builtin (list)
 	case 's':
 	  flags |= LN_SYMLINK;
 	  break;
+	case 'h':
+	case 'n':
+	  flags |= LN_NOFOLLOW;
+	  break;
+	CASE_HELPOPT;
 	default:
 	  builtin_usage ();
 	  return (EX_USAGE);
@@ -138,8 +145,10 @@ mkdirpath (dir, file)
 
 #if defined (HAVE_LSTAT)
 #  define LSTAT lstat
+#  define LSTAT_OR_STAT_IF(c, f, b)	((c) ? lstat((f), (b)) : stat((f), (b)))
 #else
 #  define LSTAT stat
+#  define LSTAT_OR_STAT_IF(c, f, b)	(stat((f), (b)))
 #endif
 
 static int
@@ -171,7 +180,7 @@ dolink (src, dst, flags)
   /* If the destination is a directory, create the final filename by appending
      the basename of the source to the destination. */
   dst_path = 0;
-  if ((stat (dst, &dsb) == 0) && S_ISDIR (dsb.st_mode))
+  if ((LSTAT_OR_STAT_IF((flags & LN_NOFOLLOW), dst, &dsb) == 0) && S_ISDIR (dsb.st_mode))
     {
       if ((p = strrchr (src, '/')) == 0)
 	p = src;
@@ -210,7 +219,8 @@ char *ln_doc[] = {
 	"Create a new directory entry with the same modes as the original",
 	"file.  The -f option means to unlink any existing file, permitting",
 	"the link to occur.  The -s option means to create a symbolic link.",
-	"By default, ln makes hard links.",
+	"By default, ln makes hard links.  Specifying -n or its synonym -h",
+	"causes ln to not resolve symlinks in the target file or directory.",
 	(char *)NULL
 };
 
@@ -221,6 +231,6 @@ struct builtin ln_struct = {
 	ln_builtin,		/* function implementing the builtin */
 	BUILTIN_ENABLED,	/* initial flags for builtin */
 	ln_doc,		/* array of long documentation strings. */
-	"ln [-fs] file1 [file2] OR ln [-fs] file ... directory",	/* usage synopsis; becomes short_doc */
+	"ln [-fhns] file1 [file2] OR ln [-fhns] file ... directory",	/* usage synopsis; becomes short_doc */
 	0			/* reserved for internal use */
 };

@@ -1,6 +1,6 @@
 /* sig.c - interface for shell signal handlers and signal initialization. */
 
-/* Copyright (C) 1994-2009 Free Software Foundation, Inc.
+/* Copyright (C) 1994-2021 Free Software Foundation, Inc.
 
    This file is part of GNU Bash, the Bourne Again SHell.
 
@@ -35,6 +35,7 @@
 #include "bashintl.h"
 
 #include "shell.h"
+#include "execute_cmd.h"
 #if defined (JOB_CONTROL)
 #include "jobs.h"
 #endif /* JOB_CONTROL */
@@ -43,31 +44,35 @@
 #include "trap.h"
 
 #include "builtins/common.h"
+#include "builtins/builtext.h"
 
 #if defined (READLINE)
 #  include "bashline.h"
+#  include <readline/readline.h>
 #endif
 
 #if defined (HISTORY)
 #  include "bashhist.h"
 #endif
 
-extern int last_command_exit_value;
-extern int last_command_exit_signal;
-extern int return_catch_flag;
-extern int loop_level, continuing, breaking;
-extern int executing_list;
-extern int comsub_ignore_return;
-extern int parse_and_execute_level, shell_initialized;
+extern void initialize_siglist PARAMS((void));
+extern void set_original_signal PARAMS((int, SigHandler *));
+
+#if !defined (JOB_CONTROL)
+extern void initialize_job_signals PARAMS((void));
+#endif
 
 /* Non-zero after SIGINT. */
-volatile int interrupt_state = 0;
+volatile sig_atomic_t interrupt_state = 0;
 
 /* Non-zero after SIGWINCH */
-volatile int sigwinch_received = 0;
+volatile sig_atomic_t sigwinch_received = 0;
+
+/* Non-zero after SIGTERM */
+volatile sig_atomic_t sigterm_received = 0;
 
 /* Set to the value of any terminating signal received. */
-volatile int terminating_signal = 0;
+volatile sig_atomic_t terminating_signal = 0;
 
 /* The environment at the top-level R-E loop.  We use this in
    the case of error return. */
@@ -88,7 +93,8 @@ int terminate_immediately = 0;
 static SigHandler *old_winch = (SigHandler *)SIG_DFL;
 #endif
 
-static void initialize_shell_signals __P((void));
+static void initialize_shell_signals PARAMS((void));
+static void kill_shell PARAMS((int));
 
 void
 initialize_signals (reinit)
@@ -109,6 +115,7 @@ struct termsig {
      int signum;
      SigHandler *orig_handler;
      int orig_flags;
+     int core_dump;
 };
 
 #define NULL_HANDLER (SigHandler *)SIG_DFL
@@ -126,15 +133,15 @@ static struct termsig terminating_signals[] = {
 #endif
 
 #ifdef SIGILL
-{  SIGILL, NULL_HANDLER, 0 },
+{  SIGILL, NULL_HANDLER, 0, 1},
 #endif
 
 #ifdef SIGTRAP
-{  SIGTRAP, NULL_HANDLER, 0 },
+{  SIGTRAP, NULL_HANDLER, 0, 1 },
 #endif
 
 #ifdef SIGIOT
-{  SIGIOT, NULL_HANDLER, 0 },
+{  SIGIOT, NULL_HANDLER, 0, 1 },
 #endif
 
 #ifdef SIGDANGER
@@ -146,19 +153,19 @@ static struct termsig terminating_signals[] = {
 #endif
 
 #ifdef SIGFPE
-{  SIGFPE, NULL_HANDLER, 0 },
+{  SIGFPE, NULL_HANDLER, 0, 1 },
 #endif
 
 #ifdef SIGBUS
-{  SIGBUS, NULL_HANDLER, 0 },
+{  SIGBUS, NULL_HANDLER, 0, 1 },
 #endif
 
 #ifdef SIGSEGV
-{  SIGSEGV, NULL_HANDLER, 0 },
+{  SIGSEGV, NULL_HANDLER, 0, 1 },
 #endif
 
 #ifdef SIGSYS
-{  SIGSYS, NULL_HANDLER, 0 },
+{  SIGSYS, NULL_HANDLER, 0, 1 },
 #endif
 
 #ifdef SIGPIPE
@@ -173,12 +180,14 @@ static struct termsig terminating_signals[] = {
 {  SIGTERM, NULL_HANDLER, 0 },
 #endif
 
+/* These don't generate core dumps on anything but Linux, but we're doing
+   this just for Linux anyway. */
 #ifdef SIGXCPU
-{  SIGXCPU, NULL_HANDLER, 0 },
+{  SIGXCPU, NULL_HANDLER, 0, 1 },
 #endif
 
 #ifdef SIGXFSZ
-{  SIGXFSZ, NULL_HANDLER, 0 },
+{  SIGXFSZ, NULL_HANDLER, 0, 1 },
 #endif
 
 #ifdef SIGVTALRM
@@ -209,12 +218,14 @@ static struct termsig terminating_signals[] = {
 #define XSIG(x) (terminating_signals[x].signum)
 #define XHANDLER(x) (terminating_signals[x].orig_handler)
 #define XSAFLAGS(x) (terminating_signals[x].orig_flags)
+#define XCOREDUMP(x) (terminating_signals[x].core_dump)
 
 static int termsigs_initialized = 0;
 
 /* Initialize signals that will terminate the shell to do some
    unwind protection.  For non-interactive shells, we only call
-   this when a trap is defined for EXIT (0). */
+   this when a trap is defined for EXIT (0) or when trap is run
+   to display signal dispositions. */
 void
 initialize_terminating_signals ()
 {
@@ -246,19 +257,26 @@ initialize_terminating_signals ()
       sigaction (XSIG (i), &act, &oact);
       XHANDLER(i) = oact.sa_handler;
       XSAFLAGS(i) = oact.sa_flags;
+
+#if 0
+      set_original_signal (XSIG(i), XHANDLER(i));	/* optimization */
+#else
+      set_original_signal (XSIG(i), act.sa_handler);	/* optimization */
+#endif
+
       /* Don't do anything with signals that are ignored at shell entry
 	 if the shell is not interactive. */
-      if (!interactive_shell && XHANDLER (i) == SIG_IGN)
+      /* XXX - should we do this for interactive shells, too? */
+      if (interactive_shell == 0 && XHANDLER (i) == SIG_IGN)
 	{
 	  sigaction (XSIG (i), &oact, &act);
-	  set_signal_ignored (XSIG (i));
+	  set_signal_hard_ignored (XSIG (i));
 	}
 #if defined (SIGPROF) && !defined (_MINIX)
       if (XSIG (i) == SIGPROF && XHANDLER (i) != SIG_DFL && XHANDLER (i) != SIG_IGN)
 	sigaction (XSIG (i), &oact, (struct sigaction *)NULL);
 #endif /* SIGPROF && !_MINIX */
     }
-
 #else /* !HAVE_POSIX_SIGNALS */
 
   for (i = 0; i < TERMSIGS_LENGTH; i++)
@@ -271,10 +289,11 @@ initialize_terminating_signals ()
       XSAFLAGS(i) = 0;
       /* Don't do anything with signals that are ignored at shell entry
 	 if the shell is not interactive. */
-      if (!interactive_shell && XHANDLER (i) == SIG_IGN)
+      /* XXX - should we do this for interactive shells, too? */
+      if (interactive_shell == 0 && XHANDLER (i) == SIG_IGN)
 	{
 	  signal (XSIG (i), SIG_IGN);
-	  set_signal_ignored (XSIG (i));
+	  set_signal_hard_ignored (XSIG (i));
 	}
 #ifdef SIGPROF
       if (XSIG (i) == SIGPROF && XHANDLER (i) != SIG_DFL && XHANDLER (i) != SIG_IGN)
@@ -299,7 +318,11 @@ initialize_shell_signals ()
   sigemptyset (&top_level_mask);
   sigprocmask (SIG_BLOCK, (sigset_t *)NULL, &top_level_mask);
 #  if defined (SIGCHLD)
-  sigdelset (&top_level_mask, SIGCHLD);
+  if (sigismember (&top_level_mask, SIGCHLD))
+    {
+      sigdelset (&top_level_mask, SIGCHLD);
+      sigprocmask (SIG_SETMASK, &top_level_mask, (sigset_t *)NULL);
+    }
 #  endif
 #endif /* JOB_CONTROL || HAVE_POSIX_SIGNALS */
 
@@ -309,6 +332,7 @@ initialize_shell_signals ()
   if (interactive)
     {
       set_signal_handler (SIGINT, sigint_sighandler);
+      get_original_signal (SIGTERM);
       set_signal_handler (SIGTERM, SIG_IGN);
       set_sigwinch_handler ();
     }
@@ -348,8 +372,9 @@ reset_terminating_signals ()
       signal (XSIG (i), XHANDLER (i));
     }
 #endif /* !HAVE_POSIX_SIGNALS */
+
+  termsigs_initialized = 0;
 }
-#undef XSIG
 #undef XHANDLER
 
 /* Run some of the cleanups that should be performed when we run
@@ -360,15 +385,15 @@ top_level_cleanup ()
 {
   /* Clean up string parser environment. */
   while (parse_and_execute_level)
-    parse_and_execute_cleanup ();
+    parse_and_execute_cleanup (-1);
 
 #if defined (PROCESS_SUBSTITUTION)
   unlink_fifo_list ();
 #endif /* PROCESS_SUBSTITUTION */
 
   run_unwind_protects ();
-  loop_level = continuing = breaking = 0;
-  executing_list = comsub_ignore_return = return_catch_flag = 0;
+  loop_level = continuing = breaking = funcnest = 0;
+  executing_list = comsub_ignore_return = return_catch_flag = wait_intr_flag = 0;
 }
 
 /* What to do when we've been interrupted, and it is safe to handle it. */
@@ -379,6 +404,9 @@ throw_to_top_level ()
 
   if (interrupt_state)
     {
+      if (last_command_exit_value < 128)
+	last_command_exit_value = 128 + SIGINT;
+      set_pipestatus_from_exit (last_command_exit_value);
       print_newline = 1;
       DELINTERRUPT;
     }
@@ -389,22 +417,29 @@ throw_to_top_level ()
   last_command_exit_signal = (last_command_exit_value > 128) ?
 				(last_command_exit_value - 128) : 0;
   last_command_exit_value |= 128;
+  set_pipestatus_from_exit (last_command_exit_value);
 
-  /* Run any traps set on SIGINT. */
-  run_interrupt_trap ();
+  /* Run any traps set on SIGINT, mostly for interactive shells */
+  if (signal_is_trapped (SIGINT) && signal_is_pending (SIGINT))
+    run_interrupt_trap (1);
 
   /* Clean up string parser environment. */
   while (parse_and_execute_level)
-    parse_and_execute_cleanup ();
+    parse_and_execute_cleanup (-1);
+
+  if (running_trap > 0)
+    {
+      run_trap_cleanup (running_trap - 1);
+      running_trap = 0;
+    }
 
 #if defined (JOB_CONTROL)
   give_terminal_to (shell_pgrp, 0);
 #endif /* JOB_CONTROL */
 
-#if defined (JOB_CONTROL) || defined (HAVE_POSIX_SIGNALS)
-  /* This should not be necessary on systems using sigsetjmp/siglongjmp. */
-  sigprocmask (SIG_SETMASK, &top_level_mask, (sigset_t *)NULL);
-#endif
+  /* This needs to stay because jobs.c:make_child() uses it without resetting
+     the signal mask. */
+  restore_sigmask ();  
 
   reset_parser ();
 
@@ -418,8 +453,8 @@ throw_to_top_level ()
 #endif /* PROCESS_SUBSTITUTION */
 
   run_unwind_protects ();
-  loop_level = continuing = breaking = 0;
-  executing_list = comsub_ignore_return = return_catch_flag = 0;
+  loop_level = continuing = breaking = funcnest = 0;
+  executing_list = comsub_ignore_return = return_catch_flag = wait_intr_flag = 0;
 
   if (interactive && print_newline)
     {
@@ -441,8 +476,18 @@ void
 jump_to_top_level (value)
      int value;
 {
-  longjmp (top_level, value);
+  sh_longjmp (top_level, value);
 }
+
+void
+restore_sigmask ()
+{
+#if defined (JOB_CONTROL) || defined (HAVE_POSIX_SIGNALS)
+  sigprocmask (SIG_SETMASK, &top_level_mask, (sigset_t *)NULL);
+#endif
+}
+
+static int handling_termsig = 0;
 
 sighandler
 termsig_sighandler (sig)
@@ -490,14 +535,38 @@ termsig_sighandler (sig)
    sig == terminating_signal)
     terminate_immediately = 1;
 
+  /* If we are currently handling a terminating signal, we have a couple of
+     choices here. We can ignore this second terminating signal and let the
+     shell exit from the first one, or we can exit immediately by killing
+     the shell with this signal. This code implements the latter; to implement
+     the former, replace the kill_shell(sig) with return. */
+  if (handling_termsig)
+    kill_shell (sig);		/* just short-circuit now */
+
   terminating_signal = sig;
 
-  /* XXX - should this also trigger when interrupt_immediately is set? */
   if (terminate_immediately)
     {
+#if defined (HISTORY)
+      /* XXX - will inhibit history file being written */
+#  if defined (READLINE)
+      if (interactive_shell == 0 || interactive == 0 || (sig != SIGHUP && sig != SIGTERM) || no_line_editing || (RL_ISSTATE (RL_STATE_READCMD) == 0))
+#  endif
+        history_lines_this_session = 0;
+#endif
       terminate_immediately = 0;
       termsig_handler (sig);
     }
+
+#if defined (READLINE)
+  /* Set the event hook so readline will call it after the signal handlers
+     finish executing, so if this interrupted character input we can get
+     quick response.  If readline is active or has modified the terminal we
+     need to set this no matter what the signal is, though the check for
+     RL_STATE_TERMPREPPED is possibly redundant. */
+  if (RL_ISSTATE (RL_STATE_SIGHANDLER) || RL_ISSTATE (RL_STATE_TERMPREPPED))
+    bashline_set_event_hook ();
+#endif
 
   SIGRETURN (0);
 }
@@ -506,43 +575,100 @@ void
 termsig_handler (sig)
      int sig;
 {
-  static int handling_termsig = 0;
-
   /* Simple semaphore to keep this function from being executed multiple
      times.  Since we no longer are running as a signal handler, we don't
      block multiple occurrences of the terminating signals while running. */
   if (handling_termsig)
     return;
-  handling_termsig = 1;
+
+  handling_termsig = terminating_signal;	/* for termsig_sighandler */
   terminating_signal = 0;	/* keep macro from re-testing true. */
 
   /* I don't believe this condition ever tests true. */
   if (sig == SIGINT && signal_is_trapped (SIGINT))
-    run_interrupt_trap ();
+    run_interrupt_trap (0);
 
 #if defined (HISTORY)
-  if (interactive_shell && sig != SIGABRT)
+  /* If we don't do something like this, the history will not be saved when
+     an interactive shell is running in a terminal window that gets closed
+     with the `close' button.  We can't test for RL_STATE_READCMD because
+     readline no longer handles SIGTERM synchronously.  */
+  if (interactive_shell && interactive && (sig == SIGHUP || sig == SIGTERM) && remember_on_history)
     maybe_save_shell_history ();
 #endif /* HISTORY */
+
+  if (this_shell_builtin == read_builtin)
+    read_tty_cleanup ();
 
 #if defined (JOB_CONTROL)
   if (sig == SIGHUP && (interactive || (subshell_environment & (SUBSHELL_COMSUB|SUBSHELL_PROCSUB))))
     hangup_all_jobs ();
-  end_job_control ();
+
+  if ((subshell_environment & (SUBSHELL_COMSUB|SUBSHELL_PROCSUB)) == 0)
+    end_job_control ();
 #endif /* JOB_CONTROL */
 
 #if defined (PROCESS_SUBSTITUTION)
-  unlink_fifo_list ();
+  unlink_all_fifos ();
+#  if defined (JOB_CONTROL)
+  procsub_clear ();
+#  endif
 #endif /* PROCESS_SUBSTITUTION */
 
   /* Reset execution context */
-  loop_level = continuing = breaking = 0;
-  executing_list = comsub_ignore_return = return_catch_flag = 0;
+  loop_level = continuing = breaking = funcnest = 0;
+  executing_list = comsub_ignore_return = return_catch_flag = wait_intr_flag = 0;
 
-  run_exit_trap ();
-  set_signal_handler (sig, SIG_DFL);
-  kill (getpid (), sig);
+  run_exit_trap ();	/* XXX - run exit trap possibly in signal context? */
+
+  kill_shell (sig);
 }
+
+static void
+kill_shell (sig)
+     int sig;
+{
+  int i, core;
+  sigset_t mask;
+
+  /* We don't change the set of blocked signals. If a user starts the shell
+     with a terminating signal blocked, we won't get here (and if by some
+     magic chance we do, we'll exit below). What we do is to restore the
+     top-level signal mask, in case this is called from a terminating signal
+     handler context, in which case the signal is blocked. */
+  restore_sigmask ();
+
+  set_signal_handler (sig, SIG_DFL);
+
+  kill (getpid (), sig);
+
+  if (dollar_dollar_pid != 1)
+    exit (128+sig);		/* just in case the kill fails? */
+
+  /* We get here only under extraordinary circumstances. */
+
+  /* We are PID 1, and the kill above failed to kill the process. We assume
+     this means that we are running as an init process in a pid namespace
+     on Linux. In this case, we can't send ourselves a fatal signal, so we
+     determine whether or not we should have generated a core dump with the
+     kill call and attempt to trick the kernel into generating one if
+     necessary. */
+  sigprocmask (SIG_SETMASK, (sigset_t *)NULL, &mask);
+  for (i = core = 0; i < TERMSIGS_LENGTH; i++)
+    {
+      set_signal_handler (XSIG (i), SIG_DFL);
+      sigdelset (&mask, XSIG (i));
+      if (sig == XSIG (i))
+	core = XCOREDUMP (i);
+    }
+  sigprocmask (SIG_SETMASK, &mask, (sigset_t *)NULL);
+
+  if (core)
+    *((volatile unsigned long *) NULL) = 0xdead0000 + sig;	/* SIGSEGV */
+
+  exit (128+sig);
+}
+#undef XSIG
 
 /* What we really do when SIGINT occurs. */
 sighandler
@@ -558,12 +684,36 @@ sigint_sighandler (sig)
   if (interrupt_state == 0)
     ADDINTERRUPT;
 
+  /* We will get here in interactive shells with job control active; allow
+     an interactive wait to be interrupted.  wait_intr_flag is only set during
+     the execution of the wait builtin and when wait_intr_buf is valid. */
+  if (wait_intr_flag)
+    {
+      last_command_exit_value = 128 + sig;
+      set_pipestatus_from_exit (last_command_exit_value);
+      wait_signal_received = sig;
+      SIGRETURN (0);
+    }
+
+  /* In interactive shells, we will get here instead of trap_handler() so
+     note that we have a trap pending. */
+  if (signal_is_trapped (sig))
+    set_trap_state (sig);
+
+  /* This is no longer used, but this code block remains as a reminder. */
   if (interrupt_immediately)
     {
       interrupt_immediately = 0;
-      last_command_exit_value = 128 + sig;
+      set_exit_status (128 + sig);
       throw_to_top_level ();
     }
+#if defined (READLINE)
+  /* Set the event hook so readline will call it after the signal handlers
+     finish executing, so if this interrupted character input we can get
+     quick response. */
+  else if (RL_ISSTATE (RL_STATE_SIGHANDLER))
+    bashline_set_event_hook ();
+#endif
 
   SIGRETURN (0);
 }
@@ -597,10 +747,17 @@ unset_sigwinch_handler ()
 #endif
 }
 
+sighandler
+sigterm_sighandler (sig)
+     int sig;
+{
+  sigterm_received = 1;		/* XXX - counter? */
+  SIGRETURN (0);
+}
+
 /* Signal functions used by the rest of the code. */
 #if !defined (HAVE_POSIX_SIGNALS)
 
-#if defined (JOB_CONTROL)
 /* Perform OPERATION on NEWSET, perhaps leaving information in OLDSET. */
 sigprocmask (operation, newset, oldset)
      int operation, *newset, *oldset;
@@ -619,7 +776,7 @@ sigprocmask (operation, newset, oldset)
       break;
 
     case SIG_SETMASK:
-      sigsetmask (new);
+      old = sigsetmask (new);
       break;
 
     default:
@@ -629,7 +786,6 @@ sigprocmask (operation, newset, oldset)
   if (oldset)
     *oldset = old;
 }
-#endif /* JOB_CONTROL */
 
 #else
 
@@ -650,15 +806,30 @@ set_signal_handler (sig, handler)
 
   act.sa_handler = handler;
   act.sa_flags = 0;
-#if 0
-  if (sig == SIGALRM)
-    act.sa_flags |= SA_INTERRUPT;	/* XXX */
-  else
+
+  /* XXX - bash-4.2 */
+  /* We don't want a child death to interrupt interruptible system calls, even
+     if we take the time to reap children */
+#if defined (SIGCHLD)
+  if (sig == SIGCHLD)
     act.sa_flags |= SA_RESTART;		/* XXX */
 #endif
+  /* Let's see if we can keep SIGWINCH from interrupting interruptible system
+     calls, like open(2)/read(2)/write(2) */
+#if defined (SIGWINCH)
+  if (sig == SIGWINCH)
+    act.sa_flags |= SA_RESTART;		/* XXX */
+#endif
+  /* If we're installing a SIGTERM handler for interactive shells, we want
+     it to be as close to SIG_IGN as possible. */
+  if (sig == SIGTERM && handler == sigterm_sighandler)
+    act.sa_flags |= SA_RESTART;		/* XXX */
+
   sigemptyset (&act.sa_mask);
   sigemptyset (&oact.sa_mask);
-  sigaction (sig, &act, &oact);
-  return (oact.sa_handler);
+  if (sigaction (sig, &act, &oact) == 0)
+    return (oact.sa_handler);
+  else
+    return (SIG_DFL);
 }
 #endif /* HAVE_POSIX_SIGNALS */

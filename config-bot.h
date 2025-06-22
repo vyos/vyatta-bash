@@ -1,7 +1,7 @@
 /* config-bot.h */
 /* modify settings or make new ones based on what autoconf tells us. */
 
-/* Copyright (C) 1989-2009 Free Software Foundation, Inc.
+/* Copyright (C) 1989-2021 Free Software Foundation, Inc.
 
    This file is part of GNU Bash, the Bourne Again SHell.
 
@@ -94,6 +94,14 @@
 #  undef COND_REGEXP
 #endif
 
+#if !HAVE_MKSTEMP
+#  undef USE_MKSTEMP
+#endif
+
+#if !HAVE_MKDTEMP
+#  undef USE_MKDTEMP
+#endif
+
 /* If the shell is called by this name, it will become restricted. */
 #if defined (RESTRICTED_SHELL)
 #  define RESTRICTED_SHELL_NAME "rbash"
@@ -133,7 +141,7 @@
 /* check multibyte capability for I18N code	*/
 /************************************************/
 
-/* For platforms which support the ISO C amendement 1 functionality we
+/* For platforms which support the ISO C amendment 1 functionality we
    support user defined character classes.  */
 /* Solaris 2.5 has a bug: <wchar.h> must be included before <wctype.h>.  */
 #if defined (HAVE_WCTYPE_H) && defined (HAVE_WCHAR_H) && defined (HAVE_LOCALE_H)

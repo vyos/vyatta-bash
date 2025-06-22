@@ -133,7 +133,7 @@ substring (string, start, end)
 
   len = end - start;
   result = (char *)xmalloc (len + 1);
-  strncpy (result, string + start, len);
+  memcpy (result, string + start, len);
   result[len] = '\0';
   return (result);
 }
@@ -146,7 +146,8 @@ strsub (string, pat, rep, global)
      char *string, *pat, *rep;
      int global;
 {
-  int patlen, replen, templen, tempsize, repl, i;
+  size_t patlen, replen, templen, tempsize, i;
+  int repl;
   char *temp, *r;
 
   patlen = strlen (pat);
@@ -158,7 +159,7 @@ strsub (string, pat, rep, global)
 	  if (replen)
 	    RESIZE_MALLOCED_BUFFER (temp, templen, replen, tempsize, (replen * 2));
 
-	  for (r = rep; *r; )
+	  for (r = rep; *r; )	/* can rep == "" */
 	    temp[templen++] = *r++;
 
 	  i += patlen ? patlen : 1;	/* avoid infinite recursion */
@@ -178,17 +179,22 @@ strsub (string, pat, rep, global)
 }
 
 /* Replace all instances of C in STRING with TEXT.  TEXT may be empty or
-   NULL.  If DO_GLOB is non-zero, we quote the replacement text for
-   globbing.  Backslash may be used to quote C. */
+   NULL.  If (FLAGS & 1) is non-zero, we quote the replacement text for
+   globbing.  Backslash may be used to quote C. If (FLAGS & 2) we allow
+   backslash to escape backslash as well. */
 char *
-strcreplace (string, c, text, do_glob)
+strcreplace (string, c, text, flags)
      char *string;
      int c;
-     char *text;
-     int do_glob;
+     const char *text;
+     int flags;
 {
   char *ret, *p, *r, *t;
-  int len, rlen, ind, tlen;
+  size_t len, rlen, ind, tlen;
+  int do_glob, escape_backslash;
+
+  do_glob = flags & 1;
+  escape_backslash = flags & 2;
 
   len = STRLEN (text);
   rlen = len + strlen (string) + 2;
@@ -224,6 +230,8 @@ strcreplace (string, c, text, do_glob)
 	}
 
       if (*p == '\\' && p[1] == c)
+	p++;
+      else if (escape_backslash && *p == '\\' && p[1] == '\\')
 	p++;
 
       ind = r - ret;
