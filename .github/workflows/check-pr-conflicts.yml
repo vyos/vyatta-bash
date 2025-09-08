@@ -1,3 +1,4 @@
+
 name: "PR Conflicts checker"
 on:
   pull_request_target:
@@ -9,6 +10,5 @@ permissions:
 
 jobs:
   check-pr-conflict-call:
-    uses: vyos/.github/.github/workflows/check-pr-merge-conflict.yml@current
+    uses: vyos/.github/.github/workflows/check-pr-conflict.yml@current
     secrets: inherit
-
