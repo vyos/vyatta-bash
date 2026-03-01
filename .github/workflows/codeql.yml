@@ -2,10 +2,24 @@ name: "Perform CodeQL Analysis"
 
 on:
   push:
-    branches: [ "current", sagitta", "equuleus", "circinus" ]
+    branches:
+      - current
+      - circinus
+      - sagitta
+    paths:
+      - '**'
+      - '!.github/**'
+      - '!**/*.md'
   pull_request_target:
     # The branches below must be a subset of the branches above
-    branches: [ "current" ]
+    branches:
+      - current
+      - circinus
+      - sagitta
+    paths:
+      - '**'
+      - '!.github/**'
+      - '!**/*.md'
   schedule:
     - cron: '22 10 * * 0'
 
