@@ -47,7 +47,3 @@ Mirror twin: `VyOS-Networks/vyatta-bash`. Canonical side is here. Mirror pipelin
 - Filename `chceck-pr-message.yml` is a known typo; left in place to avoid breaking the workflow ref. Leave as-is unless coordinated.
 - Vyatta-specific behaviour patches are scattered across multiple `.c` files (no single "vyatta" subdir). Use `git log -- <file>` to see VyOS-era changes vs upstream.
 - This is GPL-3.0 (Bash); the surrounding VyOS code mostly is GPL-2.0 — ABI/binary linkage is fine, source mixing is not.
-
----
-
-This file is mirrored on Confluence: [`vyos/vyatta-bash`](https://internal.confluence.vyos.com/wiki/spaces/VYOS/pages/818544775). The Confluence page also carries the per-repo audit data (settings, workflows, secret counts, hygiene) that complements this CLAUDE.md. Edit either side; resync via the documentation pipeline.
