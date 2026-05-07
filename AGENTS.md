@@ -29,7 +29,7 @@ There is no in-tree test runner specific to VyOS; the upstream Bash test suite u
 
 ## Cross-repo context
 
-Pre-dep of the legacy Vyatta config layer (`vyatta-cfg`, `vyatta-cfg-system` and the various `vyatta-op*`, `vyatta-config-*` Perl glue repos in `VyOS-Networks`). Listed in `VyOS-Networks/vyos-build-packages/repos.toml`. Pulled into the ISO via `vyos/vyos-build`. New CLI work generally lives in `vyos-1x` Python rather than this shell.
+Pre-dep of the legacy Vyatta config layer (`vyatta-cfg`, `vyatta-cfg-system` and the various `vyatta-op*`, `vyatta-config-*` Perl glue repos in `the private side`). Listed in an internal repository. Pulled into the ISO via `vyos/vyos-build`. New CLI work generally lives in `vyos-1x` Python rather than this shell.
 
 ## Conventions
 
@@ -37,10 +37,6 @@ Pre-dep of the legacy Vyatta config layer (`vyatta-cfg`, `vyatta-cfg-system` and
 - Commit / PR title format: `component: T12345: description` (Phorge task ID at https://vyos.dev).
 - Active workflows: `add-pr-labels.yml`, `auto-author-assign.yml`, `chceck-pr-message.yml` *(typo preserved)*, `check-pr-conflicts.yml`, `check-stale.yml`, `cla-check.yml`, `codeql.yml`, `pr-mirror-repo-sync.yml`, `sonarcloud.yml`, `trigger-rebuild-repo-package.yml`. Mirror pipeline IS wired up.
 - Treat as upstream-vendored Bash; minimise diffs against the GNU Bash 4.1 baseline.
-
-## Mirror relationship
-
-Mirror twin: `VyOS-Networks/vyatta-bash`. Canonical side is here. Mirror pipeline `pr-mirror-repo-sync.yml` is **active** for this repo. Note: VyOS-Networks twin defaults to `git-agents`-style staging branches per the cross-repo audit — ignore for canonical state.
 
 ## Notes for future contributors
 
