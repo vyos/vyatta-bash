@@ -23,7 +23,7 @@ There is no in-tree test runner specific to VyOS; the upstream Bash test suite u
 
 ## Repository layout
 
-- C source files at root (`alias.c`, `array.c`, `arrayfunc.c`, ...) — the upstream Bash 4.1 source tree.
+- C source files at root (`alias.c`, `array.c`, `arrayfunc.c`,...) — the upstream Bash 4.1 source tree.
 - `debian/` — VyOS-specific Debian packaging (`vyatta-bash` source + binary package name).
 - `CODEOWNERS`, `README` (upstream Bash README), `MANIFEST`, etc.
 
@@ -40,7 +40,7 @@ Pre-dep of the legacy Vyatta config layer (`vyatta-cfg`, `vyatta-cfg-system` and
 
 ## Mirror relationship
 
-Mirror twin: `VyOS-Networks/vyatta-bash`. Canonical side is here. Mirror pipeline `pr-mirror-repo-sync.yml` is **active** for this repo. Note: VyOS-Networks twin defaults to `git-agents`-style staging branches per relations doc §8.2 — ignore for canonical state.
+Mirror twin: `VyOS-Networks/vyatta-bash`. Canonical side is here. Mirror pipeline `pr-mirror-repo-sync.yml` is **active** for this repo. Note: VyOS-Networks twin defaults to `git-agents`-style staging branches per the cross-repo audit — ignore for canonical state.
 
 ## Notes for future contributors
 
