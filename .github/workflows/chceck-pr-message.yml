@@ -16,5 +16,5 @@
   
   jobs:
     check-pr-title:
-      uses: vyos/.github/.github/workflows/check-pr-message.yml@current
+      uses: vyos/.github/.github/workflows/check-pr-message.yml@production
       secrets: inherit
