@@ -315,6 +315,18 @@ mkseq (start, end, incr, type, width)
   char **result, *t;
 
   n = abs (end - start) + 1;
+
+  if (n > BRACE_EXPANSION_LIMIT)
+    {
+#if defined (SHELL)
+      report_error ("brace expansion: sequence too long: %d elements", n);
+      throw_to_top_level ();
+#endif
+      result = strvec_create (2);
+      result[0] = (char *)NULL;
+      return result;
+    }
+
   result = strvec_create (n + 1);
 
   if (incr == 0)

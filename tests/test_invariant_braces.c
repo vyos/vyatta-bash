@@ -24,6 +24,7 @@ START_TEST(test_brace_expansion_bounded)
     const char *payloads[] = {
         "{a,b}{c,d}{e,f}{g,h}{i,j}{k,l}{m,n}{o,p}{q,r}{s,t}",  /* exploit: exponential */
         "{a,b}{c,d}{e,f}",                                         /* boundary: moderate */
+        "{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}",  /* over-limit: 2^17=131072 > BRACE_EXPANSION_LIMIT */
         "{hello,world}",                                            /* valid: simple */
     };
     int num_payloads = sizeof(payloads) / sizeof(payloads[0]);
