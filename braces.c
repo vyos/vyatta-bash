@@ -43,6 +43,8 @@
 
 #define brace_whitespace(c) (!(c) || (c) == ' ' || (c) == '\t' || (c) == '\n')
 
+#define BRACE_EXPANSION_LIMIT	65536
+
 #define BRACE_SEQ_SPECIFIER	".."
 
 extern int asprintf __P((char **, const char *, ...)) __attribute__((__format__ (printf, 2, 3)));
@@ -136,7 +138,7 @@ brace_expand (text)
 #endif /* !CSH_BRACE_COMPAT */
 
   preamble = (char *)xmalloc (i + 1);
-  strncpy (preamble, text, i);
+  memcpy (preamble, text, i);
   preamble[i] = '\0';
 
   result = (char **)xmalloc (2 * sizeof (char *));
@@ -187,7 +189,7 @@ brace_expand (text)
   alen = i - start;
 #else
   amble = (char *)xmalloc (1 + (i - start));
-  strncpy (amble, &text[start], (i - start));
+  memcpy (amble, &text[start], (i - start));
   alen = i - start;
   amble[alen] = '\0';
 #endif
@@ -270,8 +272,8 @@ expand_amble (text, tlen, flags)
       tem = substring (text, start, i);
 #else
       tem = (char *)xmalloc (1 + (i - start));
-      strncpy (tem, &text[start], (i - start));
-      tem[i- start] = '\0';
+      memcpy (tem, &text[start], (i - start));
+      tem[i - start] = '\0';
 #endif
 
       partial = brace_expand (tem);
@@ -610,6 +612,17 @@ array_concat (arr1, arr2)
 
   len1 = strvec_len (arr1);
   len2 = strvec_len (arr2);
+
+  if (len2 != 0 && len1 > (BRACE_EXPANSION_LIMIT / len2))
+    {
+#if defined (SHELL)
+      report_error ("brace expansion: failed to allocate memory for %lu elements",
+		    (unsigned long)len1 * (unsigned long)len2);
+      throw_to_top_level ();
+#endif
+      strvec_dispose (arr1);
+      return (strvec_copy (arr2));
+    }
 
   result = (char **)xmalloc ((1 + (len1 * len2)) * sizeof (char *));
 
