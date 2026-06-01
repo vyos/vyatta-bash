@@ -33,7 +33,7 @@ Pre-dep of the legacy Vyatta config layer (`vyatta-cfg`, `vyatta-cfg-system` and
 
 ## Conventions
 
-- Default branch `current`. LTS branches when needed.
+- Default branch `rolling`. LTS branches when needed.
 - Commit / PR title format: `component: T12345: description` (Phorge task ID at https://vyos.dev).
 - Active workflows: `add-pr-labels.yml`, `auto-author-assign.yml`, `chceck-pr-message.yml` *(typo preserved)*, `check-pr-conflicts.yml`, `check-stale.yml`, `cla-check.yml`, `codeql.yml`, `pr-mirror-repo-sync.yml`, `trigger-rebuild-repo-package.yml`. Mirror pipeline IS wired up.
 - Treat as upstream-vendored Bash; minimise diffs against the GNU Bash 4.1 baseline.
