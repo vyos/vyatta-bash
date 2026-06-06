@@ -12,6 +12,8 @@ extern char **brace_expand(const char *str);
 
 static volatile int timed_out = 0;
 
+/* Sets a flag only — does not longjmp. If brace_expand hangs, the test
+ * process is killed by tcase_set_timeout (Check framework), not this handler. */
 static void handle_alarm(int sig) {
     (void)sig;
     timed_out = 1;
@@ -26,6 +28,7 @@ START_TEST(test_brace_expansion_bounded)
         "{a,b}{c,d}{e,f}",                                         /* boundary: moderate */
         "{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}{a,b}",  /* over-limit: 2^17=131072 > BRACE_EXPANSION_LIMIT */
         "{hello,world}",                                            /* valid: simple */
+        "{1..200000}",                                              /* sequence: exercises mkseq BRACE_EXPANSION_LIMIT guard */
     };
     int num_payloads = sizeof(payloads) / sizeof(payloads[0]);
 

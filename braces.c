@@ -646,8 +646,8 @@ array_concat (arr1, arr2)
       for (j = 0; j < len2; j++)
 	{
 	  result[len] = (char *)xmalloc (1 + strlen_1 + strlen (arr2[j]));
-	  strcpy (result[len], arr1[i]);
-	  strcpy (result[len] + strlen_1, arr2[j]);
+	  memcpy (result[len], arr1[i], strlen_1);
+	  memcpy (result[len] + strlen_1, arr2[j], strlen (arr2[j]) + 1);
 	  len++;
 	}
       free (arr1[i]);
